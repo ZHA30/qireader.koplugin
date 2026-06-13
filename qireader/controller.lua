@@ -58,6 +58,7 @@ local function groupSubscriptions(data, unread_by_subscription_id)
         local group = {
             id = category.id,
             label = category.label,
+            is_all = category.label == "!all",
             subscriptions = {},
             unread_count = 0,
         }
@@ -77,15 +78,21 @@ local function groupSubscriptions(data, unread_by_subscription_id)
     end
 
     local ordered = {}
+    local all_group = nil
     for i = 1, #categories do
         local category = categories[i]
         local group = groups[category.id]
-        if group.label ~= "!all" then
-            table.sort(group.subscriptions, function(left, right)
-                return (left.title or "") < (right.title or "")
-            end)
+        table.sort(group.subscriptions, function(left, right)
+            return (left.title or "") < (right.title or "")
+        end)
+        if group.is_all then
+            all_group = group
+        else
             table.insert(ordered, group)
         end
+    end
+    if all_group then
+        table.insert(ordered, 1, all_group)
     end
 
     local ungrouped = {}
@@ -509,13 +516,18 @@ function Controller:buildGroupsPageItems()
     local items = {}
     local groups = self.groups or {}
     local ungrouped = self.ungrouped or {}
-    local button_width = Screen:scaleBySize(64)
+    local perpage = self.menu and self.menu.perpage
+        or G_reader_settings:readSetting("items_per_page")
+        or Menu.items_per_page_default
+    local item_font_size = self.menu and self.menu.font_size or Menu.getItemFontSize(perpage)
+    local button_width = math.max(Screen:scaleBySize(36), item_font_size * 2)
+    local state_font_size = math.max(item_font_size, math.floor(item_font_size * 1.1))
     local function makeStateButton(text)
         return Button:new{
             text = text,
             width = button_width,
             text_font_face = "cfont",
-            text_font_size = 30,
+            text_font_size = state_font_size,
             text_font_bold = true,
             bordersize = 0,
             padding = 0,
@@ -534,13 +546,14 @@ function Controller:buildGroupsPageItems()
         if (not self:isUnreadOnly()) or (group.unread_count or 0) > 0 then
             local is_expanded = self.expanded_groups[group.id] == true
             table.insert(items, {
-                text = group.label or _("Untitled"),
+                text = group.is_all and _("All") or group.label or _("Untitled"),
                 mandatory = tostring(group.unread_count or 0),
-                state = makeStateButton(is_expanded and "▼" or "▶"),
-                bold = (group.unread_count or 0) > 0,
+                state = group.is_all and makeStateButton("") or makeStateButton(is_expanded and "▼" or "▶"),
+                bold = true,
+                dim = (group.unread_count or 0) == 0,
                 group = group,
                 callback = function(pos)
-                    if pos and pos.x <= 0.16 then
+                    if (not group.is_all) and pos and pos.x <= 0.16 then
                         self.expanded_groups[group.id] = not is_expanded
                         self:refreshGroupsPage()
                     else
@@ -555,7 +568,8 @@ function Controller:buildGroupsPageItems()
                         text = subscription.title or subscription.feedUrl or tostring(subscription.id or ""),
                         mandatory = tostring(subscription.unread_count or 0),
                         state = makeStateButton(""),
-                        bold = (subscription.unread_count or 0) > 0,
+                        bold = false,
+                        dim = (subscription.unread_count or 0) == 0,
                         subscription = subscription,
                         callback = function()
                             self:openArticles({ type = "subscription", subscription = subscription, group = group })
@@ -572,7 +586,8 @@ function Controller:buildGroupsPageItems()
                 text = subscription.title or subscription.feedUrl or tostring(subscription.id or ""),
                 mandatory = tostring(subscription.unread_count or 0),
                 state = makeStateButton(""),
-                bold = (subscription.unread_count or 0) > 0,
+                bold = false,
+                dim = (subscription.unread_count or 0) == 0,
                 subscription = subscription,
                 callback = function()
                     self:openArticles({ type = "subscription", subscription = subscription })
@@ -594,8 +609,12 @@ end
 function Controller:showGroupsPage()
     self.state = "groups"
     local items = self:buildGroupsPageItems()
+    local perpage = self.menu and self.menu.perpage
+        or G_reader_settings:readSetting("items_per_page")
+        or Menu.items_per_page_default
+    local state_w = math.max(Screen:scaleBySize(36), Menu.getItemFontSize(perpage) * 2)
     self:showMenu(_("Subscriptions"), items, "", {
-        state_w = Screen:scaleBySize(64),
+        state_w = state_w,
         single_line = true,
         align_baselines = true,
         items_padding = math.floor(Size.padding.fullscreen / 2),

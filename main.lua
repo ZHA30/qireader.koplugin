@@ -27,9 +27,12 @@ function QiReader:saveSettings()
 end
 
 function QiReader:addToMainMenu(menu_items)
+    if self.ui.view then
+        return
+    end
     menu_items.qireader_open = {
         text = _("QiReader"),
-        sorting_hint = "more_tools",
+        sorting_hint = "search",
         callback = function()
             self.controller:open()
         end,
