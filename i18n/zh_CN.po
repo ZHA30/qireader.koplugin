@@ -1,0 +1,71 @@
+msgid ""
+msgstr ""
+
+msgid "Browse QiReader subscriptions and groups."
+msgstr "浏览 QiReader 订阅与分组。"
+
+msgid "QiReader account"
+msgstr "QiReader 账号"
+
+msgid "Log in"
+msgstr "登录"
+
+msgid "Logging in..."
+msgstr "登录中..."
+
+msgid "Email and password are required."
+msgstr "邮箱和密码为必填项。"
+
+msgid "Login failed: "
+msgstr "登录失败："
+
+msgid "Loading subscriptions..."
+msgstr "正在加载订阅..."
+
+msgid "Session expired. Please log in again from Account."
+msgstr "会话已过期，请从“账号”重新登录。"
+
+msgid "Cannot load subscriptions: "
+msgstr "无法加载订阅："
+
+msgid "No response"
+msgstr "无响应"
+
+msgid "Network request failed"
+msgstr "网络请求失败"
+
+msgid "Not logged in"
+msgstr "未登录"
+
+msgid "Logged in"
+msgstr "已登录"
+
+msgid "Account"
+msgstr "账号"
+
+msgid "Unread only: On"
+msgstr "只显示未读：开"
+
+msgid "Unread only: Off"
+msgstr "只显示未读：关"
+
+msgid "Log out of QiReader?"
+msgstr "要退出 QiReader 登录吗？"
+
+msgid "Log out"
+msgstr "退出登录"
+
+msgid "Logged out"
+msgstr "已退出登录"
+
+msgid "Subscriptions"
+msgstr "订阅"
+
+msgid "Untitled"
+msgstr "未命名"
+
+msgid "No unread subscriptions."
+msgstr "没有未读订阅。"
+
+msgid "No subscriptions."
+msgstr "没有订阅。"
