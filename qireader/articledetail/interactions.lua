@@ -12,10 +12,6 @@ local Device = require("device")
 
 local methods = {}
 
-function methods.getReadLaterButtonText()
-    return _("RIT")
-end
-
 function methods:getFullTextButtonText()
     if self:isFullTextLoading() then
         return _("Loading")
