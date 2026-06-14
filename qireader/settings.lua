@@ -10,6 +10,11 @@ Settings.article_defaults = {
     title_font_size = 18,
 }
 
+Settings.article_detail_defaults = {
+    font_size = 22,
+    font_face = "./fonts/noto/NotoSans-Regular.ttf",
+}
+
 Settings.defaults = {
     api_base = "https://www.qireader.com/api",
     cookie = nil,
@@ -25,6 +30,10 @@ Settings.defaults = {
             title_font_size = 18,
         },
         custom = {},
+    },
+    article_detail = {
+        font_size = Settings.article_detail_defaults.font_size,
+        font_face = Settings.article_detail_defaults.font_face,
     },
 }
 

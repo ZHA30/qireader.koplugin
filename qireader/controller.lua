@@ -709,7 +709,7 @@ function Controller:ensureReadLaterTagId()
     return nil
 end
 
-function Controller.buildArticleTarget(_, row)
+function Controller.buildArticleTarget(_self, row)
     if row.type == "group" and row.group then
         local group = row.group
         local stream_id
@@ -849,7 +849,7 @@ function Controller:onArticleListClosed(widget)
     UIManager:close(widget)
 end
 
-function Controller.onArticleDetailClosed(_, widget)
+function Controller.onArticleDetailClosed(_self, widget)
     UIManager:close(widget)
 end
 
@@ -980,7 +980,7 @@ function Controller:toggleReadLater(entry, widget)
     end
 end
 
-function Controller:openArticleContent(target, entry)
+function Controller:openArticleContent(target, entry, detail_widget)
     local response = self.client:getEntryContents(target.stream_id, { entry.id })
     if response.code == 401 then
         self:handleUnauthorized()
@@ -991,14 +991,20 @@ function Controller:openArticleContent(target, entry)
         return
     end
     local content = response.json.result[1].content or entry.summary or ""
+    local formatted = ArticleContent.format(entry, content)
+    local title = entry.title or _("Untitled")
+    if detail_widget and detail_widget.updateArticleDetail then
+        detail_widget:updateArticleDetail(entry, formatted, title)
+        return
+    end
     if self.article_widget then
-        self.article_widget:showArticleDetail(entry, ArticleContent.format(entry, content))
+        self.article_widget:showArticleDetail(entry, formatted)
     else
         UIManager:show(QiArticleDetailWidget:new{
             controller = self,
             entry = entry,
-            title = entry.title or _("Untitled"),
-            html = ArticleContent.format(entry, content),
+            title = title,
+            html = formatted,
         })
     end
 end

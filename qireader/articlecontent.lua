@@ -1,6 +1,8 @@
 local util = require("util")
 
 local ArticleContent = {}
+local DEFAULT_PAGE_MARGIN_VERTICAL = 8
+local DEFAULT_PAGE_MARGIN_HORIZONTAL = 12
 
 local VOID_MEDIA_PATTERN = {
     img = "图片",
@@ -234,7 +236,7 @@ local function collapseBreaks(html)
     return trim(html)
 end
 
-function ArticleContent.format(entry, content)
+function ArticleContent.format(_entry, content)
     local raw = content or ""
     local sanitized = normalizeHtml(raw)
     sanitized = dropBlocks(sanitized)
@@ -250,48 +252,32 @@ function ArticleContent.format(entry, content)
         fallback = fallback:gsub("\n", "<br/>")
         sanitized = "<p>" .. fallback .. "</p>"
     end
-
-    local metadata = {}
-    local source_title = entry and entry.source_title or nil
-    local date_text = entry and entry.date_text or nil
-    if source_title and source_title ~= "" then
-        metadata[#metadata + 1] = string.format(
-            '<p class="meta-line"><strong>Source</strong>: %s</p>',
-            escapeHtml(source_title)
-        )
-    end
-    if date_text and date_text ~= "" and date_text ~= "--" then
-        metadata[#metadata + 1] = string.format(
-            '<p class="meta-line"><strong>Date</strong>: %s</p>',
-            escapeHtml(date_text)
-        )
-    end
-
-    local html = {}
-    if #metadata > 0 then
-        html[#html + 1] = '<section class="article-meta">'
-        for i = 1, #metadata do
-            html[#html + 1] = metadata[i]
-        end
-        html[#html + 1] = "</section>"
-        html[#html + 1] = "<hr/>"
-    end
-    html[#html + 1] = sanitized
-
-    return table.concat(html, "\n")
+    -- Avoid nesting placeholders like "[图片：[图片]]" when alt/title text is itself a placeholder.
+    sanitized = sanitized:gsub("(%[图片：)%s*%[图片%]%s*(%])", "[图片]")
+    sanitized = sanitized:gsub("(%[视频：)%s*%[视频%]%s*(%])", "[视频]")
+    sanitized = sanitized:gsub("(%[音频：)%s*%[音频%]%s*(%])", "[音频]")
+    sanitized = sanitized:gsub("(%[嵌入内容：)%s*%[嵌入内容%]%s*(%])", "[嵌入内容]")
+    return sanitized
 end
 
-ArticleContent.DEFAULT_CSS = [[
-body {
+ArticleContent.DEFAULT_CSS_TEMPLATE = [[
+@page {
+    margin: %dpx %dpx %dpx %dpx;
+}
+
+html, body {
     margin: 0;
     padding: 0;
-    line-height: 1.45;
+}
+
+body {
+    line-height: 1.4;
 }
 p, blockquote, ul, ol, pre {
-    margin: 0 0 0.8em 0;
+    margin: 0 0 0.5em 0;
 }
 h1, h2, h3, h4, h5, h6 {
-    margin: 1em 0 0.45em 0;
+    margin: 0.6em 0 0.25em 0;
     font-weight: bold;
 }
 h1 { font-size: 1.55em; }
@@ -299,35 +285,42 @@ h2 { font-size: 1.35em; }
 h3 { font-size: 1.2em; }
 h4, h5, h6 { font-size: 1.05em; }
 blockquote {
-    margin-left: 1.2em;
-    padding-left: 0.8em;
+    margin-left: 0.7em;
+    padding-left: 0.45em;
 }
 ul, ol {
-    padding-left: 1.3em;
+    margin-left: 0.1em;
+    padding-left: 1em;
 }
 li {
-    margin: 0.15em 0;
+    margin: 0.08em 0;
 }
 pre, code {
     white-space: pre-wrap;
     font-family: monospace;
 }
 pre {
-    padding: 0.5em 0.7em;
+    padding: 0.3em 0.45em;
 }
 hr {
-    margin: 1em 0;
-}
-.article-meta {
-    margin-bottom: 0.8em;
-}
-.meta-line {
-    margin: 0 0 0.35em 0;
+    margin: 0.55em 0;
 }
 .media-placeholder {
-    margin: 0.7em 0;
+    margin: 0.35em 0;
     font-style: italic;
 }
 ]]
+
+function ArticleContent.getDefaultCss()
+    return string.format(
+        ArticleContent.DEFAULT_CSS_TEMPLATE,
+        DEFAULT_PAGE_MARGIN_VERTICAL,
+        DEFAULT_PAGE_MARGIN_HORIZONTAL,
+        DEFAULT_PAGE_MARGIN_VERTICAL,
+        DEFAULT_PAGE_MARGIN_HORIZONTAL
+    )
+end
+
+ArticleContent.DEFAULT_CSS = ArticleContent.getDefaultCss()
 
 return ArticleContent

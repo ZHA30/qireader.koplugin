@@ -800,7 +800,7 @@ function QiArticleListWidget:goToPage(page)
     end
 end
 
-function QiArticleListWidget:onSwipe(_, ges)
+function QiArticleListWidget:onSwipe(_arg, ges)
     if not ges or not ges.direction then
         return false
     end
@@ -954,12 +954,66 @@ function QiArticleListWidget:reloadFromRemote()
 end
 
 function QiArticleListWidget:showArticleDetail(entry, html)
-    UIManager:show(QiArticleDetailWidget:new{
+    local detail_widget = QiArticleDetailWidget:new{
         controller = self.controller,
         entry = entry,
         title = entry and entry.title or self.title or _("Untitled"),
         html = html,
-    })
+        on_prev_article = function(current_entry, widget)
+            self:showAdjacentArticleDetail(current_entry, -1, widget)
+        end,
+        on_next_article = function(current_entry, widget)
+            self:showAdjacentArticleDetail(current_entry, 1, widget)
+        end,
+        on_close_article = function(widget)
+            self.controller:onArticleDetailClosed(widget)
+        end,
+        has_prev_article = function(current_entry)
+            return self:canShowAdjacentArticle(current_entry, -1)
+        end,
+        has_next_article = function(current_entry)
+            return self:canShowAdjacentArticle(current_entry, 1)
+        end,
+    }
+    UIManager:show(detail_widget)
+end
+
+function QiArticleListWidget:getVisibleEntryIndex(entry)
+    local page = self.loaded_pages[self.show_page]
+    local entries = page and page.entries or nil
+    if not entry or not entries then
+        return nil
+    end
+    for i = 1, #entries do
+        if entries[i] == entry or entries[i].id == entry.id then
+            return i
+        end
+    end
+    return nil
+end
+
+function QiArticleListWidget:canShowAdjacentArticle(entry, offset)
+    local index = self:getVisibleEntryIndex(entry)
+    local page = self.loaded_pages[self.show_page]
+    local entries = page and page.entries or nil
+    if not index or not entries then
+        return false
+    end
+    return entries[index + offset] ~= nil
+end
+
+function QiArticleListWidget:showAdjacentArticleDetail(current_entry, offset, widget)
+    local page = self.loaded_pages[self.show_page]
+    local entries = page and page.entries or nil
+    local index = self:getVisibleEntryIndex(current_entry)
+    if not entries or not index then
+        return
+    end
+    local next_entry = entries[index + offset]
+    if not next_entry then
+        return
+    end
+    self.controller:openArticleContent(self.target, next_entry, widget)
 end
 
 return QiArticleListWidget

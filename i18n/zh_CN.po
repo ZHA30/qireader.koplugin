@@ -97,6 +97,15 @@ msgstr "每页列表项：%d"
 msgid "Later"
 msgstr "稍后"
 
+msgid "Previous"
+msgstr "上一个"
+
+msgid "Next"
+msgstr "下一个"
+
+msgid "Close"
+msgstr "关闭"
+
 msgid "Loading..."
 msgstr "加载中..."
 
@@ -148,23 +157,23 @@ msgstr "无法更新稍后阅读状态。"
 msgid "Later: On"
 msgstr "稍后：开"
 
-msgid "Find"
-msgstr "查找"
+msgid "Monospace font"
+msgstr "等宽字体"
 
-msgid "Find next"
-msgstr "查找下一个"
+msgid "Font"
+msgstr "字体"
 
-msgid "Enter text to search for"
-msgstr "输入要查找的文本"
+msgid "Font: %1"
+msgstr "字体：%1"
 
-msgid "No matches for '%1' were found."
-msgstr "没有找到“%1”的匹配项。"
+msgid "Font size: %d"
+msgstr "字号：%d"
 
-msgid "Source"
-msgstr "来源"
+msgid "Font size"
+msgstr "字号"
 
-msgid "Date"
-msgstr "日期"
+msgid "Selection copied to clipboard."
+msgstr "所选文本已复制到剪贴板。"
 
 msgid "Invalid number."
 msgstr "数字无效。"
