@@ -109,12 +109,27 @@ end
 function methods:showGroupsFromCache()
     if self.groups and self.ungrouped and self.subscriptions then
         self:showGroupsPage()
-        return
+        return true
+    end
+    local data = self:readCache(
+        self:cacheKey("subscriptions"),
+        self:getCacheTtl("subscriptions"),
+        true
+    )
+    if data then
+        local unread_data = self:readCache(
+            self:cacheKey("unread_counts"),
+            self:getCacheTtl("unread_counts"),
+            true
+        )
+        self:showGroups(data, unread_data)
+        return true
     end
     self.groups = {}
     self.ungrouped = {}
     self.subscriptions = {}
     self:showGroupsPage()
+    return false
 end
 
 function methods.buildArticleTarget(_self, row)

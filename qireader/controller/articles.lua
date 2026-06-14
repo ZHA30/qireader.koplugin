@@ -6,6 +6,8 @@ local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 
 local methods = {}
+local ARTICLE_CONTENT_JOB_KEY = "article_content"
+local CONTENT_PREFETCH_JOB_PREFIX = "article_content_prefetch:"
 local PAGE_READ_MARK_JOB_PREFIX = "page_mark_read:"
 local READ_MARK_JOB_PREFIX = "article_mark_read:"
 local FULL_TEXT_API_URL = "https://nettools3.oxyry.com/text"
@@ -33,20 +35,26 @@ local function refreshDetailWidget(widget)
     end
 end
 
-local function buildArticleContent(entry, response)
-    local content = response.json.result[1].content or entry.summary or ""
+local function hasContentPayload(payload)
+    return type(payload) == "table"
+        and type(payload.content) == "string"
+        and payload.content ~= ""
+end
+
+local function buildArticleContent(entry, payload)
+    local content = payload and payload.content or entry.summary or ""
     local formatted = ArticleContent.format(entry, content)
-    local title = entry.title or _("Untitled")
+    local title = entry.title or (payload and payload.title) or _("Untitled")
     return formatted, title
 end
 
-local function buildFullTextContent(entry, response)
-    local content = response.json and response.json.content or nil
+local function buildFullTextContent(entry, payload)
+    local content = payload and payload.content or nil
     if type(content) ~= "string" or content == "" then
         return nil
     end
     local formatted = ArticleContent.format(entry, content)
-    local title = entry.title or response.json.title or _("Untitled")
+    local title = entry.title or (payload and payload.title) or _("Untitled")
     return formatted, title
 end
 
@@ -71,6 +79,257 @@ local function buildEntryIdsJobKey(prefix, entry_ids)
         parts[i] = tostring(entry_ids[i])
     end
     return prefix .. table.concat(parts, ",")
+end
+
+local function mapArticleContentPayloads(entries, response)
+    local result = response and response.json and response.json.result or {}
+    local by_id = {}
+    local mapped = {}
+    for i = 1, #result do
+        local item = result[i]
+        if type(item) == "table" and item.id ~= nil then
+            by_id[tostring(item.id)] = item
+        end
+    end
+    for i = 1, #entries do
+        local entry = entries[i]
+        local payload = by_id[tostring(entry.id)] or result[i]
+        if hasContentPayload(payload) then
+            mapped[tostring(entry.id)] = payload
+        end
+    end
+    return mapped
+end
+
+function methods:getArticleContentCacheKey(target, entry)
+    if not target or not target.stream_id or not entry or not entry.id then
+        return nil
+    end
+    return self:cacheKey("content", target.stream_id, entry.id)
+end
+
+function methods:getCachedArticleContent(target, entry)
+    return self:readCache(
+        self:getArticleContentCacheKey(target, entry),
+        self:getCacheTtl("content"),
+        not NetworkMgr:isOnline()
+    )
+end
+
+function methods:cacheArticleContent(target, entry, payload)
+    if not hasContentPayload(payload) then
+        return
+    end
+    self:writeCache(self:getArticleContentCacheKey(target, entry), {
+        id = payload.id or entry.id,
+        title = payload.title,
+        content = payload.content,
+    })
+end
+
+function methods:getFullTextCacheKey(entry)
+    if not entry or not entry.url or entry.url == "" then
+        return nil
+    end
+    return self:cacheKey("fulltext", entry.url, "keep-classes=1")
+end
+
+function methods:getCachedFullText(entry)
+    return self:readCache(
+        self:getFullTextCacheKey(entry),
+        self:getCacheTtl("fulltext"),
+        not NetworkMgr:isOnline()
+    )
+end
+
+function methods:cacheFullText(entry, payload)
+    if hasContentPayload(payload) then
+        self:writeCache(self:getFullTextCacheKey(entry), payload)
+    end
+end
+
+function methods:getArticleContentPrefetchEntries(target, current_entry)
+    local cache_settings = self.settings.cache or {}
+    local count = math.max(1, tonumber(cache_settings.content_prefetch_count) or 6)
+    local entries = {}
+    if current_entry then
+        entries[#entries + 1] = current_entry
+    end
+    if not target or not target.stream_id then
+        return entries
+    end
+    local widget = self.article_widget
+    if not widget
+        or widget.closing
+        or not widget.getLoadedEntryIndex
+        or not widget.target
+        or widget.target.stream_id ~= target.stream_id then
+        return entries
+    end
+    local index, loaded_entries = widget:getLoadedEntryIndex(current_entry)
+    if not index then
+        return entries
+    end
+    local last_index = math.min(#loaded_entries, index + count - 1)
+    for i = index + 1, last_index do
+        entries[#entries + 1] = loaded_entries[i]
+    end
+    return entries
+end
+
+function methods:requestArticleContents(target, entries, job_key, options, callback)
+    options = options or {}
+    callback = callback or function() end
+    if not target or not target.stream_id or not entries or #entries == 0 then
+        callback({}, nil)
+        return
+    end
+    if options.background and not NetworkMgr:isOnline() then
+        callback(nil, "offline")
+        return
+    end
+    local entry_ids = {}
+    for i = 1, #entries do
+        local entry = entries[i]
+        if entry and entry.id then
+            entry_ids[#entry_ids + 1] = entry.id
+        end
+    end
+    if #entry_ids == 0 then
+        callback({}, nil)
+        return
+    end
+    local job_token = self:nextJobToken(job_key)
+    local job = self:createBackgroundRequest({
+        method = "GET",
+        path = "/entry-contents",
+        query = {
+            streamId = target.stream_id,
+            entryIds = entry_ids,
+        },
+    })
+    if not job then
+        callback(nil, "error")
+        return
+    end
+    self:registerPendingJob(job_key, job)
+    local function poll()
+        if self.state == "closed"
+            or not self:isJobTokenCurrent(job_key, job_token)
+            or self.pending_jobs[job_key] ~= job then
+            self:cancelPendingJob(job_key, job)
+            callback(nil, "cancelled")
+            return
+        end
+        local done, response, err = job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, poll)
+            return
+        end
+        self:clearPendingJob(job_key, job)
+        if err == "cancelled" then
+            callback(nil, "cancelled")
+            return
+        end
+        if self.state == "closed" or not self:isJobTokenCurrent(job_key, job_token) then
+            callback(nil, "cancelled")
+            return
+        end
+        self:applyResponseSession(response)
+        if response and response.code == 401 then
+            self:handleUnauthorized()
+            callback(nil, "unauthorized")
+            return
+        end
+        if not response or response.code ~= 200 or not response.json or not response.json.result then
+            callback(nil, "error")
+            return
+        end
+        callback(mapArticleContentPayloads(entries, response), nil)
+    end
+    poll()
+end
+
+function methods:prefetchAdjacentArticleContents(target, current_entry)
+    if not target or not current_entry or not NetworkMgr:isOnline() then
+        return
+    end
+    local entries = self:getArticleContentPrefetchEntries(target, current_entry)
+    local missing_entries = {}
+    for i = 1, #entries do
+        local entry = entries[i]
+        if entry and entry.id and not self:getCachedArticleContent(target, entry) then
+            missing_entries[#missing_entries + 1] = entry
+        end
+    end
+    if #missing_entries == 0 then
+        return
+    end
+    local job_key = CONTENT_PREFETCH_JOB_PREFIX .. tostring(target.stream_id)
+    if self.pending_jobs[job_key] then
+        return
+    end
+    self:requestArticleContents(target, missing_entries, job_key, { background = true }, function(payloads, err)
+        if err or not payloads then
+            return
+        end
+        for i = 1, #missing_entries do
+            local entry = missing_entries[i]
+            self:cacheArticleContent(target, entry, payloads[tostring(entry.id)])
+        end
+    end)
+end
+
+function methods:showArticleContent(_target, entry, payload, detail_widget)
+    self:markArticleRead(entry)
+    local formatted, title = buildArticleContent(entry, payload)
+    if detail_widget
+        and detail_widget.updateArticleDetail
+        and not detail_widget.closing
+        and self.article_detail_widget == detail_widget then
+        detail_widget:updateArticleDetail(entry, formatted, title)
+        return
+    end
+    if self.article_widget then
+        self.article_widget:showArticleDetail(entry, formatted)
+        return
+    end
+    local content_widget = QiArticleDetailWidget:new{
+        controller = self,
+        entry = entry,
+        title = title,
+        html = formatted,
+        on_close_article = function(closed_widget)
+            self:onArticleDetailClosed(closed_widget)
+        end,
+    }
+    self.article_detail_widget = content_widget
+    UIManager:show(content_widget)
+end
+
+function methods:cancelArticleContentLoads(target)
+    self:cancelPendingJob(ARTICLE_CONTENT_JOB_KEY)
+    if target and target.stream_id then
+        self:cancelPendingJob(CONTENT_PREFETCH_JOB_PREFIX .. tostring(target.stream_id))
+    end
+end
+
+function methods:isArticleContentOwnerCurrent(target, detail_widget, owner_widget)
+    if self.state == "closed" then
+        return false
+    end
+    if detail_widget then
+        return detail_widget.entry
+            and not detail_widget.closing
+            and detail_widget.updateArticleDetail
+            and self.article_detail_widget == detail_widget
+    end
+    if owner_widget then
+        return not owner_widget.closing
+            and self.article_widget == owner_widget
+            and owner_widget.target == target
+    end
+    return true
 end
 
 function methods:syncReadLaterEntry(entry)
@@ -121,6 +380,7 @@ function methods:applyReadLaterState(entry, tag_id)
         entry.tag_ids[#entry.tag_ids + 1] = tag_id
     end
     self:syncReadLaterEntry(entry)
+    self:invalidateStreamCache()
     self:refreshReadLaterWidgets()
 end
 
@@ -131,9 +391,29 @@ function methods:loadReadLaterTagId(callback)
         end
         return
     end
+    local cached_tag_id = self:readCache(
+        self:cacheKey("readlater_tag"),
+        self:getCacheTtl("readlater_tag"),
+        not NetworkMgr:isOnline()
+    )
+    if cached_tag_id then
+        self.readlater_tag_id = cached_tag_id
+        if callback then
+            callback(cached_tag_id)
+        end
+        return
+    end
     if callback then
         self.readlater_tag_callbacks = self.readlater_tag_callbacks or {}
         self.readlater_tag_callbacks[#self.readlater_tag_callbacks + 1] = callback
+    end
+    if not NetworkMgr:isOnline() then
+        local callbacks = self.readlater_tag_callbacks or {}
+        self.readlater_tag_callbacks = nil
+        for i = 1, #callbacks do
+            callbacks[i](nil, "offline")
+        end
+        return
     end
     if self.pending_jobs.readlater_tag then
         return
@@ -196,6 +476,7 @@ function methods:loadReadLaterTagId(callback)
             local tag = tags[i]
             if tag.label == "!readlater" then
                 self.readlater_tag_id = tag.id
+                self:writeCache(self:cacheKey("readlater_tag"), tag.id)
                 self:refreshReadLaterWidgets()
                 finish(self.readlater_tag_id)
                 return
@@ -210,6 +491,7 @@ function methods:onArticleListClosed(widget)
     if self.article_widget == widget then
         self.article_widget = nil
     end
+    self:cancelArticleContentLoads(widget and widget.target or nil)
     if widget and widget.closeDetailWidget then
         widget:closeDetailWidget()
     elseif self.article_detail_widget then
@@ -224,11 +506,15 @@ function methods:onArticleDetailClosed(widget)
     if self.article_detail_widget == widget then
         self.article_detail_widget = nil
     end
+    self:cancelPendingJob(ARTICLE_CONTENT_JOB_KEY)
     self:cancelArticleFullText(widget and widget.entry or nil)
     UIManager:close(widget)
 end
 
 function methods:markPageRead(page)
+    if not NetworkMgr:isOnline() then
+        return
+    end
     if not page or not page.entries or #page.entries == 0 then
         return
     end
@@ -245,6 +531,7 @@ function methods:markPageRead(page)
     for i = 1, #page.entries do
         page.entries[i].status = 1
     end
+    self:invalidateStreamCache()
     local job = self:createBackgroundRequest({
         method = "PUT",
         path = "/markers/reads",
@@ -331,10 +618,16 @@ function methods:applyArticleReadState(entry)
         self.article_detail_widget.entry.status = 1
         changed = true
     end
+    if changed then
+        self:invalidateStreamCache()
+    end
     return changed
 end
 
 function methods:markArticleRead(entry)
+    if not NetworkMgr:isOnline() then
+        return
+    end
     if not self:applyArticleReadState(entry) then
         return
     end
@@ -380,10 +673,8 @@ function methods:markArticleRead(entry)
 end
 
 function methods:toggleReadLater(entry, widget)
-    if NetworkMgr and NetworkMgr.willRerunWhenOnline
-        and NetworkMgr:willRerunWhenOnline(function()
-            self:toggleReadLater(entry, widget)
-        end) then
+    if not NetworkMgr:isOnline() then
+        self:showTransientMessage(_("Cannot update read-later state."))
         return
     end
     self:loadReadLaterTagId(function(tag_id, tag_err)
@@ -467,6 +758,15 @@ function methods:loadArticleFullText(entry, detail_widget)
     if not isCurrentDetailWidget(self, entry, detail_widget) then
         return
     end
+    local cached_payload = self:getCachedFullText(entry)
+    if cached_payload then
+        local formatted, title = buildFullTextContent(entry, cached_payload)
+        if formatted then
+            detail_widget:updateArticleDetail(entry, formatted, title)
+            setFullTextState(detail_widget, "loaded", entry.id)
+            return
+        end
+    end
     if NetworkMgr and NetworkMgr.willRerunWhenOnline
         and NetworkMgr:willRerunWhenOnline(function()
             self:loadArticleFullText(entry, detail_widget)
@@ -527,7 +827,8 @@ function methods:loadArticleFullText(entry, detail_widget)
             self:showTransientMessage(_("Cannot load full article."))
             return
         end
-        local formatted, title = buildFullTextContent(entry, response)
+        self:cacheFullText(entry, response.json)
+        local formatted, title = buildFullTextContent(entry, response.json)
         if not formatted then
             setFullTextState(detail_widget, "error", entry.id)
             self:showTransientMessage(_("Cannot load full article."))
@@ -539,7 +840,7 @@ function methods:loadArticleFullText(entry, detail_widget)
     poll()
 end
 
-function methods:openArticleContent(target, entry, detail_widget)
+function methods:openArticleContent(target, entry, detail_widget, owner_widget)
     if detail_widget
         and detail_widget.entry
         and entry
@@ -549,84 +850,55 @@ function methods:openArticleContent(target, entry, detail_widget)
             detail_widget:setFullTextState("idle", detail_widget.entry.id)
         end
     end
+    owner_widget = owner_widget or (detail_widget and detail_widget.owner_widget) or self.article_widget
+    if not self:isArticleContentOwnerCurrent(target, detail_widget, owner_widget) then
+        return
+    end
+    local cached_payload = self:getCachedArticleContent(target, entry)
+    if cached_payload then
+        self:showArticleContent(target, entry, cached_payload, detail_widget)
+        self:prefetchAdjacentArticleContents(target, entry)
+        return
+    end
     if NetworkMgr and NetworkMgr.willRerunWhenOnline
         and NetworkMgr:willRerunWhenOnline(function()
-            self:openArticleContent(target, entry, detail_widget)
+            self:openArticleContent(target, entry, detail_widget, owner_widget)
         end) then
         return
     end
-    local job_token = self:nextJobToken("article_content")
-    local job = self:createBackgroundRequest({
-        method = "GET",
-        path = "/entry-contents",
-        query = {
-            streamId = target.stream_id,
-            entryIds = { entry.id },
-        },
-    })
-    if not job then
-        self:showTransientMessage(_("Cannot load article content."))
-        return
+    local request_entries = self:getArticleContentPrefetchEntries(target, entry)
+    local missing_entries = {}
+    for i = 1, #request_entries do
+        local item = request_entries[i]
+        if item and item.id and not self:getCachedArticleContent(target, item) then
+            missing_entries[#missing_entries + 1] = item
+        end
     end
-    self:registerPendingJob("article_content", job)
-    local function poll()
-        if self.state == "closed"
-            or not self:isJobTokenCurrent("article_content", job_token)
-            or self.pending_jobs.article_content ~= job then
-            self:cancelPendingJob("article_content", job)
+    if target and target.stream_id then
+        self:cancelPendingJob(CONTENT_PREFETCH_JOB_PREFIX .. tostring(target.stream_id))
+    end
+    self:requestArticleContents(target, missing_entries, ARTICLE_CONTENT_JOB_KEY, nil, function(payloads, err)
+        if err == "cancelled" or err == "unauthorized" then
             return
         end
-        local done, response, err = job:poll()
-        if not done then
-            UIManager:scheduleIn(0.1, poll)
+        if not self:isArticleContentOwnerCurrent(target, detail_widget, owner_widget) then
             return
         end
-        self:clearPendingJob("article_content", job)
-        if err == "cancelled" then
-            return
-        end
-        if self.state == "closed" or not self:isJobTokenCurrent("article_content", job_token) then
-            return
-        end
-        self:applyResponseSession(response)
-        if not response then
+        if err or not payloads then
             self:showTransientMessage(_("Cannot load article content."))
             return
         end
-        if response.code == 401 then
-            self:handleUnauthorized()
-            return
+        for i = 1, #missing_entries do
+            local item = missing_entries[i]
+            self:cacheArticleContent(target, item, payloads[tostring(item.id)])
         end
-        if response.code ~= 200 or not response.json or not response.json.result or not response.json.result[1] then
+        local payload = payloads[tostring(entry.id)] or self:getCachedArticleContent(target, entry)
+        if not payload then
             self:showTransientMessage(_("Cannot load article content."))
             return
         end
-        self:markArticleRead(entry)
-        local formatted, title = buildArticleContent(entry, response)
-        if detail_widget
-            and detail_widget.updateArticleDetail
-            and not detail_widget.closing
-            and self.article_detail_widget == detail_widget then
-            detail_widget:updateArticleDetail(entry, formatted, title)
-            return
-        end
-        if self.article_widget then
-            self.article_widget:showArticleDetail(entry, formatted)
-            return
-        end
-        local content_widget = QiArticleDetailWidget:new{
-            controller = self,
-            entry = entry,
-            title = title,
-            html = formatted,
-            on_close_article = function(closed_widget)
-                self:onArticleDetailClosed(closed_widget)
-            end,
-        }
-        self.article_detail_widget = content_widget
-        UIManager:show(content_widget)
-    end
-    poll()
+        self:showArticleContent(target, entry, payload, detail_widget)
+    end)
 end
 
 return methods

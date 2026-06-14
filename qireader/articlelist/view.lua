@@ -282,7 +282,12 @@ function methods:onSwipe(_arg, ges)
     elseif ges.direction == "east" then
         return self:prevPage()
     elseif ges.direction == "south" then
-        if self.loading or self.pending_request then
+        if self.loading then
+            return true
+        end
+        if self.pending_request and self.pending_request_background then
+            self:clearPendingFetch()
+        elseif self.pending_request then
             return true
         end
         self:reloadFromRemote()
@@ -571,7 +576,15 @@ function methods:loadNextAdjacentArticle(current_entry, widget)
     if widget and (widget.closing or self.detail_widget ~= widget) then
         return
     end
-    if self.loading or self.pending_request then
+    if self.loading then
+        if self.controller then
+            self.controller:showTransientMessage(_("Loading..."))
+        end
+        return
+    end
+    if self.pending_request and self.pending_request_background then
+        self:clearPendingFetch()
+    elseif self.pending_request then
         if self.controller then
             self.controller:showTransientMessage(_("Loading..."))
         end

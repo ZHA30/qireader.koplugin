@@ -1,6 +1,7 @@
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../../i18n/po.lua")
 
 local Device = require("device")
+local NetworkMgr = require("ui/network/manager")
 local Size = require("ui/size")
 local UIManager = require("ui/uimanager")
 local item_module = require("qireader.articlelist.item")
@@ -88,6 +89,49 @@ function methods:buildStreamQuery(cursor)
         end
     end
     return query
+end
+
+function methods:getStreamCacheKey(query)
+    local cursor_name = ""
+    local cursor_value = ""
+    if query.olderThan then
+        cursor_name = "olderThan"
+        cursor_value = query.olderThan
+    elseif query.newerThan then
+        cursor_name = "newerThan"
+        cursor_value = query.newerThan
+    end
+    return self.controller:cacheKey(
+        "stream",
+        self.controller:getStreamCacheGeneration(),
+        self:getStreamId(),
+        query.count or "",
+        query.articleOrder or "",
+        query.unreadOnly and "1" or "0",
+        cursor_name,
+        cursor_value
+    )
+end
+
+function methods:loadChunkFromCache(chunk_index, query)
+    local cache_key = self:getStreamCacheKey(query)
+    local result = self.controller:readCache(
+        cache_key,
+        self.controller:getCacheTtl("stream"),
+        true
+    )
+    if not result then
+        return nil, cache_key
+    end
+    self.loaded_chunks[chunk_index] = self.controller:normalizeArticlePage(self.target, result)
+    self:rebuildLoadedPages()
+    return self.loaded_chunks[chunk_index], cache_key
+end
+
+function methods:writeChunkCache(cache_key, result)
+    if result then
+        self.controller:writeCache(cache_key, result)
+    end
 end
 
 function methods:getStreamId()
@@ -185,6 +229,7 @@ function methods:clearPendingFetch()
     end
     self.pending_request = nil
     self.pending_request_chunk_index = nil
+    self.pending_request_background = nil
     self.loading = false
 end
 
@@ -194,6 +239,7 @@ function methods:finishPendingFetch()
     end
     self.pending_request = nil
     self.pending_request_chunk_index = nil
+    self.pending_request_background = nil
 end
 
 function methods:startChunkFetch(chunk_index, options, callback)
@@ -204,14 +250,42 @@ function methods:startChunkFetch(chunk_index, options, callback)
     if not self:canLoadChunk(chunk_index) then
         return false, "blocked"
     end
+
+    local query = self:buildStreamQuery(self:getChunkCursor(chunk_index))
+    local cache_key
+    if not options.force_remote then
+        local cached_chunk
+        cached_chunk, cache_key = self:loadChunkFromCache(chunk_index, query)
+        if cached_chunk then
+            if not options.background then
+                self.loading = false
+            end
+            if NetworkMgr:isOnline() then
+                self:refreshChunkFromRemote(chunk_index, query, cache_key)
+            end
+            callback(cached_chunk, nil)
+            return true, nil
+        end
+    else
+        cache_key = self:getStreamCacheKey(query)
+    end
+
     if self.pending_request then
-        return false, "busy"
+        if not options.background and self.pending_request_background then
+            self:clearPendingFetch()
+        else
+            return false, "busy"
+        end
+    end
+
+    if options.background and not NetworkMgr:isOnline() then
+        return false, "offline"
     end
 
     local job = self.controller:createBackgroundRequest({
         method = "GET",
         path = "/streams/" .. tostring(self:getStreamId()),
-        query = self:buildStreamQuery(self:getChunkCursor(chunk_index)),
+        query = query,
     })
     if not job then
         return false, "error"
@@ -219,6 +293,7 @@ function methods:startChunkFetch(chunk_index, options, callback)
 
     self.pending_request = job
     self.pending_request_chunk_index = chunk_index
+    self.pending_request_background = options.background == true
     if options.background then
         self.preloading_chunks[chunk_index] = true
     else
@@ -265,6 +340,7 @@ function methods:startChunkFetch(chunk_index, options, callback)
             return
         end
 
+        self:writeChunkCache(cache_key, response.json.result)
         self.loaded_chunks[chunk_index] = self.controller:normalizeArticlePage(self.target, response.json.result)
         self:rebuildLoadedPages()
         callback(self.loaded_chunks[chunk_index], nil)
@@ -272,6 +348,56 @@ function methods:startChunkFetch(chunk_index, options, callback)
 
     poll()
     return true, nil
+end
+
+function methods:refreshChunkFromRemote(chunk_index, query, cache_key)
+    if self.closing or self.pending_request or not NetworkMgr:isOnline() then
+        return
+    end
+    local job = self.controller:createBackgroundRequest({
+        method = "GET",
+        path = "/streams/" .. tostring(self:getStreamId()),
+        query = query,
+    })
+    if not job then
+        return
+    end
+    self.pending_request = job
+    self.pending_request_chunk_index = chunk_index
+    self.pending_request_background = true
+    self.preloading_chunks[chunk_index] = true
+
+    local function poll()
+        if self.closing or self.pending_request ~= job then
+            if self.pending_request == job then
+                self:clearPendingFetch()
+            end
+            return
+        end
+        local done, response, err = job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, poll)
+            return
+        end
+        self:finishPendingFetch()
+        if self.closing or err == "cancelled" then
+            return
+        end
+        self.controller:applyResponseSession(response)
+        if response and response.code == 401 then
+            self.controller:handleUnauthorized()
+            return
+        end
+        if not response or response.code ~= 200 or not response.json or not response.json.result then
+            return
+        end
+        self:writeChunkCache(cache_key, response.json.result)
+        self.loaded_chunks[chunk_index] = self.controller:normalizeArticlePage(self.target, response.json.result)
+        self:rebuildLoadedPages()
+        self:refresh()
+    end
+
+    poll()
 end
 
 function methods:fetchChunk(chunk_index, options, callback)
@@ -319,7 +445,8 @@ function methods:maybePreloadNextChunk()
     return err == nil
 end
 
-function methods:loadPage(page)
+function methods:loadPage(page, options)
+    options = options or {}
     if self.closing then
         return
     end
@@ -335,8 +462,15 @@ function methods:loadPage(page)
         self:maybePreloadNextChunk()
         return
     end
-    if self.loading or self.pending_request then
+    if self.loading then
         return
+    end
+    if self.pending_request then
+        if self.pending_request_background then
+            self:clearPendingFetch()
+        else
+            return
+        end
     end
     local chunk_index = self:getNextLoadableChunkIndex()
     if not chunk_index then
@@ -346,7 +480,9 @@ function methods:loadPage(page)
     self.loading = true
     self:refreshFooter()
     self:refresh()
-    local err = select(2, self:fetchChunk(chunk_index, nil, function(_chunk, callback_err)
+    local err = select(2, self:fetchChunk(chunk_index, {
+        force_remote = options.force_remote,
+    }, function(_chunk, callback_err)
         if self.closing then
             return
         end
@@ -397,7 +533,7 @@ function methods:reloadFromRemote()
     self.show_page = 1
     self.pages = 1
     self.has_more = false
-    self:loadPage(1)
+    self:loadPage(1, { force_remote = true })
 end
 
 return methods

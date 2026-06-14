@@ -106,6 +106,7 @@ function methods:openArticles(row)
         controller = self,
         title = target.title,
         target = target,
+        preload_pages_before_end = (self.settings.cache or {}).stream_preload_pages_before_end or 2,
     }
     UIManager:show(self.article_widget)
     self:loadReadLaterTagId()

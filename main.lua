@@ -68,4 +68,8 @@ function QiReader:onCloseWidget()
     end
 end
 
+function QiReader.deletePluginSettings()
+    require("qireader.cache").deleteStorage()
+end
+
 return QiReader

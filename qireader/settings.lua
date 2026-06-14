@@ -26,11 +26,26 @@ Settings.article_detail_defaults = {
     font_face = "./fonts/noto/NotoSans-Regular.ttf",
 }
 
+Settings.cache_defaults = {
+    enabled = true,
+    size_mb = 20,
+    subscriptions_ttl = 86400,
+    unread_counts_ttl = 300,
+    stream_ttl = 900,
+    content_ttl = 2592000,
+    readlater_tag_ttl = 86400,
+    fulltext_ttl = 2592000,
+    content_prefetch_count = 6,
+    stream_preload_pages_before_end = 2,
+}
+
 Settings.defaults = {
     api_base = "https://www.qireader.com/api",
     cookie = nil,
     user = nil,
     show_unread_only = false,
+    stream_cache_generation = 0,
+    cache = deepCopy(Settings.cache_defaults),
     article_settings = {
         global = deepCopy(Settings.article_defaults),
         custom = {},

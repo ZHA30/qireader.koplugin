@@ -24,9 +24,11 @@ local function resetSubscriptions(controller)
 end
 
 local function clearSession(controller)
+    controller:clearCache()
     Settings.clearSession(controller.settings)
     controller.readlater_tag_id = nil
     controller.readlater_tag_callbacks = nil
+    controller.settings.stream_cache_generation = 0
     controller.save_settings()
     resetSubscriptions(controller)
 end
@@ -80,9 +82,6 @@ function methods:handleUnauthorized()
 end
 
 function methods:open()
-    if NetworkMgr:willRerunWhenOnline(function() self:open() end) then
-        return
-    end
     self:openHome()
 end
 
@@ -215,13 +214,16 @@ function methods:login(email, password)
     end)
 end
 
-function methods:startSubscriptionsLoad()
+function methods:startSubscriptionsLoad(_options)
     local token = self:nextJobToken("subscriptions")
     local subscriptions_job = self:createBackgroundRequest({
         method = "GET",
         path = "/subscriptions",
     })
     if not subscriptions_job then
+        if self:showGroupsFromCache() then
+            return
+        end
         self:showError(_("Cannot load subscriptions: ") .. _("Network request failed"), function()
             self:showGroupsFromCache()
         end)
@@ -232,6 +234,9 @@ function methods:startSubscriptionsLoad()
     local function finalizeFailure(response)
         self:clearPendingJob("subscriptions", subscriptions_job)
         self.state = "groups"
+        if self:showGroupsFromCache() then
+            return
+        end
         self:showError(_("Cannot load subscriptions: ") .. responseError(response), function()
             self:showGroupsFromCache()
         end)
@@ -245,7 +250,10 @@ function methods:startSubscriptionsLoad()
         if not unread_job then
             self:clearPendingJob("subscriptions", subscriptions_job)
             self.state = "groups"
-            self:showGroups(subscriptions_response.json, nil)
+            self:showGroups(
+                subscriptions_response.json,
+                self:readCache(self:cacheKey("unread_counts"), self:getCacheTtl("unread_counts"), true)
+            )
             return
         end
         self:registerPendingJob("unread_counts", unread_job)
@@ -263,7 +271,21 @@ function methods:startSubscriptionsLoad()
                 return
             end
             self:clearPendingJob("unread_counts", unread_job)
+            self:applyResponseSession(unread_response)
+            if unread_response and unread_response.code == 401 then
+                self:handleUnauthorized()
+                return
+            end
             local unread_json = unread_response and unread_response.code == 200 and unread_response.json or nil
+            if unread_json then
+                self:writeCache(self:cacheKey("unread_counts"), unread_json)
+            else
+                unread_json = self:readCache(
+                    self:cacheKey("unread_counts"),
+                    self:getCacheTtl("unread_counts"),
+                    true
+                )
+            end
             self.state = "groups"
             self:showGroups(subscriptions_response.json, unread_json)
         end
@@ -298,6 +320,7 @@ function methods:startSubscriptionsLoad()
             finalizeFailure(response)
             return
         end
+        self:writeCache(self:cacheKey("subscriptions"), response.json)
         pollUnreadCounts(response)
     end
 
@@ -309,12 +332,15 @@ function methods:openHome()
         self:showGroupsFromCache()
         return
     end
-    if NetworkMgr:willRerunWhenOnline(function() self:openHome() end) then
+    local has_cache = self:showGroupsFromCache()
+    if not NetworkMgr:isOnline() then
         return
     end
-    self.state = "loading"
-    self:showLoading(_("Loading subscriptions..."))
-    self:startSubscriptionsLoad()
+    if not has_cache then
+        self.state = "loading"
+        self:showLoading(_("Loading subscriptions..."))
+    end
+    self:startSubscriptionsLoad({ silent = has_cache })
 end
 
 return methods

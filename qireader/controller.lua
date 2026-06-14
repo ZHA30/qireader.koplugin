@@ -1,4 +1,5 @@
 local Background = require("qireader.background")
+local Cache = require("qireader.cache")
 local settings_methods = require("qireader.controller.settings")
 local article_methods = require("qireader.controller.articles")
 local menu_methods = require("qireader.controller.menu")
@@ -36,6 +37,7 @@ function Controller.new(args)
         readlater_tag_callbacks = nil,
         pending_jobs = {},
         job_tokens = {},
+        cache = Cache.new(args.settings.cache),
     }, Controller)
 end
 
@@ -107,6 +109,61 @@ end
 function Controller:applyResponseSession(response)
     if response and response.cookie and response.cookie ~= "" then
         self.settings.cookie = response.cookie
+    end
+end
+
+function Controller:getCacheUserId()
+    local user = self.settings.user
+    if type(user) ~= "table" or user.id == nil or user.id == "" then
+        return nil
+    end
+    return tostring(user.id)
+end
+
+function Controller:cacheKey(kind, ...)
+    if not self.cache or not self.cache:isEnabled() then
+        return nil
+    end
+    local user_id = self:getCacheUserId()
+    if not user_id then
+        return nil
+    end
+    return self.cache:key(kind, "v1", self.settings.api_base or "", user_id, ...)
+end
+
+function Controller:readCache(key, ttl, allow_stale)
+    if not self.cache then
+        return nil
+    end
+    return self.cache:get(key, ttl, allow_stale)
+end
+
+function Controller:writeCache(key, payload)
+    if self.cache then
+        return self.cache:put(key, payload)
+    end
+    return false
+end
+
+function Controller:clearCache()
+    if self.cache then
+        self.cache:clear()
+    end
+end
+
+function Controller:getCacheTtl(name)
+    local cache_settings = self.settings.cache or {}
+    return cache_settings[name .. "_ttl"]
+end
+
+function Controller:getStreamCacheGeneration()
+    return tonumber(self.settings.stream_cache_generation) or 0
+end
+
+function Controller:invalidateStreamCache()
+    self.settings.stream_cache_generation = self:getStreamCacheGeneration() + 1
+    if self.save_settings then
+        self.save_settings()
     end
 end
 
