@@ -169,27 +169,6 @@ msgstr "："
 msgid "[%s: %s]"
 msgstr "[%s：%s]"
 
-msgid "Bad image URL."
-msgstr "图片地址无效"
-
-msgid "Download failed."
-msgstr "下载失败"
-
-msgid "Too many redirects."
-msgstr "重定向过多"
-
-msgid "Unsupported format."
-msgstr "格式不支持"
-
-msgid "Open failed."
-msgstr "打开失败"
-
-msgid "Downloading..."
-msgstr "正在下载..."
-
-msgid "Download interrupted."
-msgstr "下载中断"
-
 msgid "Cannot open article list."
 msgstr "无法打开文章列表。"
 

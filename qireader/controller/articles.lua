@@ -1,7 +1,6 @@
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../../i18n/po.lua")
 
 local ArticleContent = require("qireader.articlecontent")
-local ArticleImage = require("qireader.articleimage")
 local QiArticleDetailWidget = require("qireader.articledetail")
 local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
@@ -35,9 +34,9 @@ end
 
 local function buildArticleContent(entry, response)
     local content = response.json.result[1].content or entry.summary or ""
-    local formatted, media_refs = ArticleContent.format(entry, content)
+    local formatted = ArticleContent.format(entry, content)
     local title = entry.title or _("Untitled")
-    return formatted, title, media_refs
+    return formatted, title
 end
 
 local function buildFullTextContent(entry, response)
@@ -45,9 +44,9 @@ local function buildFullTextContent(entry, response)
     if type(content) ~= "string" or content == "" then
         return nil
     end
-    local formatted, media_refs = ArticleContent.format(entry, content)
+    local formatted = ArticleContent.format(entry, content)
     local title = entry.title or response.json.title or _("Untitled")
-    return formatted, title, media_refs
+    return formatted, title
 end
 
 local function isCurrentDetailWidget(controller, entry, widget)
@@ -425,10 +424,6 @@ function methods:toggleReadLater(entry, widget)
     end)
 end
 
-function methods:openArticleImage(ref, widget)
-    ArticleImage.open(self, ref, widget)
-end
-
 function methods:cancelArticleFullText(entry)
     if entry and entry.id then
         self:cancelPendingJob(FULL_TEXT_JOB_PREFIX .. tostring(entry.id))
@@ -504,13 +499,13 @@ function methods:loadArticleFullText(entry, detail_widget)
             self:showTransientMessage(_("Cannot load full article."))
             return
         end
-        local formatted, title, media_refs = buildFullTextContent(entry, response)
+        local formatted, title = buildFullTextContent(entry, response)
         if not formatted then
             setFullTextState(detail_widget, "error", entry.id)
             self:showTransientMessage(_("Cannot load full article."))
             return
         end
-        detail_widget:updateArticleDetail(entry, formatted, title, media_refs)
+        detail_widget:updateArticleDetail(entry, formatted, title)
         setFullTextState(detail_widget, "loaded", entry.id)
     end
     poll()
@@ -579,16 +574,16 @@ function methods:openArticleContent(target, entry, detail_widget)
             return
         end
         self:markArticleRead(entry)
-        local formatted, title, media_refs = buildArticleContent(entry, response)
+        local formatted, title = buildArticleContent(entry, response)
         if detail_widget
             and detail_widget.updateArticleDetail
             and not detail_widget.closing
             and self.article_detail_widget == detail_widget then
-            detail_widget:updateArticleDetail(entry, formatted, title, media_refs)
+            detail_widget:updateArticleDetail(entry, formatted, title)
             return
         end
         if self.article_widget then
-            self.article_widget:showArticleDetail(entry, formatted, media_refs)
+            self.article_widget:showArticleDetail(entry, formatted)
             return
         end
         local content_widget = QiArticleDetailWidget:new{
@@ -596,7 +591,6 @@ function methods:openArticleContent(target, entry, detail_widget)
             entry = entry,
             title = title,
             html = formatted,
-            media_refs = media_refs,
             on_close_article = function(closed_widget)
                 self:onArticleDetailClosed(closed_widget)
             end,

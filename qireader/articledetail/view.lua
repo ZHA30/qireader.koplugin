@@ -134,7 +134,7 @@ function methods:getContentHeight()
 end
 
 function methods:createScrollWidget()
-    local scroll_widget = ScrollHtmlWidget:new{
+    return ScrollHtmlWidget:new{
         html_body = self.html,
         css = self:getEffectiveCss(),
         default_font_size = Screen:scaleBySize(self.font_size),
@@ -144,24 +144,7 @@ function methods:createScrollWidget()
         text_scroll_span = DETAIL_TEXT_SCROLL_SPAN,
         dialog = self,
         highlight_text_selection = true,
-        html_link_tapped_callback = function(link)
-            self:onHtmlLinkTapped(link)
-        end,
     }
-    local tap_scroll_text = scroll_widget.onTapScrollText
-    scroll_widget.onTapScrollText = function(widget, arg, ges)
-        local htmlbox_widget = widget.htmlbox_widget
-        if htmlbox_widget and htmlbox_widget.html_link_tapped_callback then
-            local pos = htmlbox_widget:getPosFromAbsPos(ges.pos)
-            local link = pos and htmlbox_widget:getLinkByPosition(pos)
-            if link then
-                htmlbox_widget.html_link_tapped_callback(link)
-                return true
-            end
-        end
-        return tap_scroll_text(widget, arg, ges)
-    end
-    return scroll_widget
 end
 
 function methods:getScrollRatio()

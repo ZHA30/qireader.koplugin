@@ -442,7 +442,7 @@ function methods:showMenuDialog()
     UIManager:show(dialog)
 end
 
-function methods:showArticleDetail(entry, html, media_refs)
+function methods:showArticleDetail(entry, html)
     self:closeDetailWidget()
     local detail_widget = QiArticleDetailWidget:new{
         controller = self.controller,
@@ -450,7 +450,6 @@ function methods:showArticleDetail(entry, html, media_refs)
         entry = entry,
         title = entry and entry.title or self.title or _("Untitled"),
         html = html,
-        media_refs = media_refs,
         on_prev_article = function(current_entry, widget)
             self:showAdjacentArticleDetail(current_entry, -1, widget)
         end,

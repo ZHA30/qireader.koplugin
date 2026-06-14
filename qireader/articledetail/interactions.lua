@@ -11,23 +11,6 @@ local T = require("ffi/util").template
 local Device = require("device")
 
 local methods = {}
-local IMAGE_LINK_PATTERN = "^https://qireader%.invalid/image/([%w_%-]+)$"
-local LEGACY_IMAGE_LINK_PATTERN = "^qireader%-image://([%w_%-]+)$"
-
-local function getLinkUri(link)
-    if type(link) == "string" then
-        return link
-    end
-    if type(link) ~= "table" then
-        return nil
-    end
-    if type(link.uri) == "string" then
-        return link.uri
-    end
-    if type(link.link) == "table" and type(link.link.uri) == "string" then
-        return link.link.uri
-    end
-end
 
 function methods.getReadLaterButtonText()
     return _("RIT")
@@ -105,7 +88,6 @@ function methods:saveFullTextOriginal()
         entry_id = entry_id,
         title = self.title,
         html = self.html,
-        media_refs = self.media_refs,
     }
 end
 
@@ -122,7 +104,6 @@ function methods:closeFullText()
     end
     self.title = original.title or self.title
     self.html = original.html or self.html
-    self.media_refs = original.media_refs
     self.full_text_original = nil
     self.full_text_state = "idle"
     self.full_text_entry_id = entry_id
@@ -311,19 +292,6 @@ end
 function methods:onShowMenu()
     self:showMenuDialog()
     return true
-end
-
-function methods:onHtmlLinkTapped(link)
-    local uri = getLinkUri(link)
-    local ref_id = uri and (uri:match(IMAGE_LINK_PATTERN) or uri:match(LEGACY_IMAGE_LINK_PATTERN))
-    if not ref_id then
-        return
-    end
-    local ref = self.media_refs and self.media_refs[ref_id] or nil
-    if ref and self.controller and self.controller.openArticleImage then
-        self.controller:openArticleImage(ref, self)
-        return true
-    end
 end
 
 function methods:onTapClose(_arg, ges_ev)

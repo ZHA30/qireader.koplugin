@@ -1,13 +1,10 @@
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../i18n/po.lua")
 
-local socket_url = require("socket.url")
 local util = require("util")
 
 local ArticleContent = {}
 local DEFAULT_PAGE_MARGIN_VERTICAL = 8
 local DEFAULT_PAGE_MARGIN_HORIZONTAL = 12
-local MEDIA_LINK_SCHEME = "https://qireader.invalid/image/"
-local MEDIA_LINK_PATTERN = "^https://qireader%.invalid/image/[%w_%-]+$"
 
 local MEDIA_TAGS = {
     { tag = "figure", label = "Image", paired = true, void = false },
@@ -73,8 +70,6 @@ local TEXT_TAGS = {
     span = true,
     a = true,
 }
-
-ArticleContent.MEDIA_LINK_SCHEME = MEDIA_LINK_SCHEME
 
 local IMAGE_FILE_EXTENSIONS = {
     jpg = true,
@@ -206,107 +201,6 @@ local function getAttr(attrs, name)
     return nil
 end
 
-local function getEntryUrl(entry)
-    if not entry then
-        return nil
-    end
-    if type(entry.url) == "string" and entry.url ~= "" then
-        return entry.url
-    end
-    if type(entry.raw) == "table" and type(entry.raw.url) == "string" and entry.raw.url ~= "" then
-        return entry.raw.url
-    end
-end
-
-local function normalizeMediaUrl(value, base_url)
-    value = trim(util.htmlEntitiesToUtf8(value or ""))
-    if value == "" or value:lower():match("^data:") then
-        return nil
-    end
-    value = value:match("^([^%s]+)") or value
-    if value:match("^//") then
-        value = "https:" .. value
-    end
-    if value:match("^https?://") then
-        return value
-    end
-    if not base_url or base_url == "" or value:match("^#") then
-        return nil
-    end
-    local ok, parsed_base = pcall(socket_url.parse, base_url)
-    if not ok or not parsed_base then
-        return nil
-    end
-    local absolute_ok, absolute_url = pcall(socket_url.absolute, parsed_base, value)
-    if absolute_ok and type(absolute_url) == "string" and absolute_url:match("^https?://") then
-        return absolute_url
-    end
-end
-
-local function getSrcsetUrl(value, base_url)
-    value = trim(util.htmlEntitiesToUtf8(value or ""))
-    if value == "" then
-        return nil
-    end
-    local chosen
-    for candidate in (value .. ","):gmatch("(.-),") do
-        local url = normalizeMediaUrl(candidate, base_url)
-        if url then
-            chosen = url
-        end
-    end
-    return chosen
-end
-
-local function getMediaUrlFromAttrs(attrs, base_url, allow_href)
-    if not attrs then
-        return nil
-    end
-    local url_attrs = {
-        "data-original-src",
-        "data-original",
-        "data-src",
-        "data-lazy-src",
-        "srcset",
-        "src",
-        "poster",
-    }
-    if allow_href then
-        url_attrs[#url_attrs + 1] = "href"
-        url_attrs[#url_attrs + 1] = "xlink:href"
-    end
-    for i = 1, #url_attrs do
-        local attr_name = url_attrs[i]
-        local value = getAttr(attrs, attr_name)
-        local url
-        if attr_name == "srcset" then
-            url = getSrcsetUrl(value, base_url)
-        else
-            url = normalizeMediaUrl(value, base_url)
-        end
-        if url then
-            return url
-        end
-    end
-end
-
-local function getMediaUrl(attrs, body, base_url, tag_name)
-    local direct_url = getMediaUrlFromAttrs(attrs, base_url, tag_name == "image")
-    if direct_url then
-        return direct_url
-    end
-    if not body then
-        return nil
-    end
-    for nested_tag, nested_attrs in body:gmatch("<([%w:_-]+)([^>]*)>") do
-        local normalized_tag = nested_tag:lower()
-        local nested_url = getMediaUrlFromAttrs(nested_attrs, base_url, normalized_tag == "image")
-        if nested_url then
-            return nested_url
-        end
-    end
-end
-
 local function addCandidate(candidates, value)
     if value and value ~= "" then
         candidates[#candidates + 1] = value
@@ -345,17 +239,7 @@ local function addBodyCandidates(candidates, body)
     end
 end
 
-local function addMediaRef(context, ref)
-    if not context or not ref or not ref.url then
-        return nil
-    end
-    context.media_ref_index = context.media_ref_index + 1
-    local id = "img" .. tostring(context.media_ref_index)
-    context.media_refs[id] = ref
-    return id
-end
-
-local function buildMediaPlaceholder(label_id, attrs, body, context, tag_name)
+local function buildMediaPlaceholder(label_id, attrs, body)
     local kind = _(label_id or "Media")
     local candidates = {}
     addTextCandidates(candidates, attrs)
@@ -375,22 +259,6 @@ local function buildMediaPlaceholder(label_id, attrs, body, context, tag_name)
     else
         placeholder_text = string.format("[%s]", kind)
     end
-    if label_id == "Image" and context then
-        local url = getMediaUrl(attrs, body, context.base_url, tag_name)
-        local id = addMediaRef(context, {
-            url = url,
-            referer = context.base_url,
-            title = text,
-        })
-        if id then
-            return string.format(
-                '<p class="media-placeholder"><a href="%s%s">%s</a></p>',
-                MEDIA_LINK_SCHEME,
-                id,
-                placeholder_text
-            )
-        end
-    end
     return string.format('<p class="media-placeholder">%s</p>', placeholder_text)
 end
 
@@ -402,18 +270,18 @@ local function dropBlocks(html)
     return html
 end
 
-local function replaceMedia(html, context)
+local function replaceMedia(html)
     for i = 1, #MEDIA_TAGS do
         local spec = MEDIA_TAGS[i]
         local tag = asciiCasePattern(spec.tag)
         if spec.paired then
             html = html:gsub("<" .. tag .. "([^>]*)>(.-)</" .. tag .. "%s*>", function(attrs, body)
-                return buildMediaPlaceholder(spec.label, attrs, body, context, spec.tag)
+                return buildMediaPlaceholder(spec.label, attrs, body)
             end)
         end
         if spec.void then
             html = html:gsub("<" .. tag .. "([^>]*)/?>", function(attrs)
-                return buildMediaPlaceholder(spec.label, attrs, nil, context, spec.tag)
+                return buildMediaPlaceholder(spec.label, attrs)
             end)
         end
     end
@@ -421,11 +289,7 @@ local function replaceMedia(html, context)
 end
 
 local function sanitizeAnchors(html)
-    html = html:gsub("<a([^>]*)>(.-)</a%s*>", function(attrs, body)
-        local href = getAttr(attrs, "href")
-        if href and href:match(MEDIA_LINK_PATTERN) then
-            return string.format('<a href="%s">%s</a>', escapeHtml(href), body)
-        end
+    html = html:gsub("<a([^>]*)>(.-)</a%s*>", function(_attrs, body)
         return body
     end)
     return html
@@ -437,10 +301,6 @@ local function sanitizeOpenTag(tag, attrs)
         return ""
     end
     if tag == "a" then
-        local href = getAttr(attrs, "href")
-        if href and href:match(MEDIA_LINK_PATTERN) then
-            return string.format('<a href="%s">', escapeHtml(href))
-        end
         return "<a>"
     end
     if tag == "p" and attrs and attrs:match('class%s*=%s*["\'][^"\']*media%-placeholder[^"\']*["\']') then
@@ -513,16 +373,11 @@ local function collapseBreaks(html)
     return trim(html)
 end
 
-function ArticleContent.format(entry, content)
+function ArticleContent.format(_entry, content)
     local raw = content or ""
-    local context = {
-        base_url = getEntryUrl(entry),
-        media_refs = {},
-        media_ref_index = 0,
-    }
     local sanitized = normalizeHtml(raw)
     sanitized = dropBlocks(sanitized)
-    sanitized = replaceMedia(sanitized, context)
+    sanitized = replaceMedia(sanitized)
     sanitized = sanitizeAnchors(sanitized)
     sanitized = sanitizeTags(sanitized)
     sanitized = collapseBreaks(sanitized)
@@ -534,7 +389,7 @@ function ArticleContent.format(entry, content)
         fallback = fallback:gsub("\n", "<br/>")
         sanitized = "<p>" .. fallback .. "</p>"
     end
-    return sanitized, context.media_refs
+    return sanitized
 end
 
 ArticleContent.DEFAULT_CSS_TEMPLATE = [[
@@ -585,9 +440,6 @@ hr {
 .media-placeholder {
     margin: 0.35em 0;
     font-style: italic;
-}
-.media-placeholder a {
-    text-decoration: underline;
 }
 ]]
 
