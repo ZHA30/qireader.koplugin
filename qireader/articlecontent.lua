@@ -3,8 +3,6 @@ local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../
 local util = require("util")
 
 local ArticleContent = {}
-local DEFAULT_PAGE_MARGIN_VERTICAL = 8
-local DEFAULT_PAGE_MARGIN_HORIZONTAL = 12
 
 local MEDIA_TAGS = {
     { tag = "figure", label = "Image", paired = true, void = false },
@@ -394,7 +392,7 @@ end
 
 ArticleContent.DEFAULT_CSS_TEMPLATE = [[
 @page {
-    margin: %dpx %dpx %dpx %dpx;
+    margin: 0.35em 0.6em 0.45em 0.6em;
 }
 
 html, body {
@@ -403,54 +401,86 @@ html, body {
 }
 
 body {
-    line-height: 1.4;
+    line-height: 1.45;
 }
-p, blockquote, ul, ol, pre {
-    margin: 0 0 0.5em 0;
+p, div, section, article, main, header, footer, aside,
+blockquote, ul, ol, pre {
+    margin: 0;
 }
+
+p + *, div + *, section + *, article + *, main + *,
+blockquote + *, ul + *, ol + *, pre + * {
+    margin-top: 0.62em;
+}
+
 h1, h2, h3, h4, h5, h6 {
-    margin: 0.6em 0 0.25em 0;
     font-weight: bold;
+    line-height: 1.25;
+    margin: 0.75em 0 0.35em 0;
 }
-h1 { font-size: 1.55em; }
-h2 { font-size: 1.35em; }
-h3 { font-size: 1.2em; }
+h1 {
+    font-size: 1.35em;
+    margin-top: 0.2em;
+}
+h2 { font-size: 1.22em; }
+h3 { font-size: 1.12em; }
 h4, h5, h6 { font-size: 1.05em; }
+
+.article-meta, .meta-line, header, footer, aside {
+    font-size: 0.86em;
+    line-height: 1.35;
+}
+
 blockquote {
-    margin-left: 0.7em;
-    padding-left: 0.45em;
+    margin-left: 0.45em;
+    padding-left: 0.6em;
+    border-left: 0.08em solid #777;
 }
+
 ul, ol {
-    margin-left: 0.1em;
-    padding-left: 1em;
+    padding-left: 1.45em;
 }
+
 li {
-    margin: 0.08em 0;
+    margin: 0.15em 0;
 }
+
+li p, li div {
+    margin: 0.15em 0;
+}
+
 pre, code {
     white-space: pre-wrap;
     font-family: monospace;
 }
+
 pre {
-    padding: 0.3em 0.45em;
+    padding: 0.35em 0.45em;
+    border: 0.05em solid #999;
 }
+
+code {
+    font-size: 0.92em;
+}
+
 hr {
-    margin: 0.55em 0;
+    margin: 0.8em 0;
 }
+
+a {
+    color: black;
+}
+
 .media-placeholder {
-    margin: 0.35em 0;
+    margin: 0.75em 0;
+    font-size: 0.9em;
     font-style: italic;
+    text-align: center;
 }
 ]]
 
 function ArticleContent.getDefaultCss()
-    return string.format(
-        ArticleContent.DEFAULT_CSS_TEMPLATE,
-        DEFAULT_PAGE_MARGIN_VERTICAL,
-        DEFAULT_PAGE_MARGIN_HORIZONTAL,
-        DEFAULT_PAGE_MARGIN_VERTICAL,
-        DEFAULT_PAGE_MARGIN_HORIZONTAL
-    )
+    return ArticleContent.DEFAULT_CSS_TEMPLATE
 end
 
 ArticleContent.DEFAULT_CSS = ArticleContent.getDefaultCss()

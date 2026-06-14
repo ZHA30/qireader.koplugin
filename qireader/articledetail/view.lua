@@ -120,10 +120,9 @@ function methods:getEffectiveCss()
         font_family = string.format("'%s', serif", CUSTOM_FONT_FAMILY)
     end
     return string.format(
-        "%s\n%sbody { font-family: %s; }\npre, code { font-family: %s; }\n",
+        "%s\n%sbody { font-family: %s; }\n",
         self:getBaseCss(),
         font_css,
-        font_family,
         font_family
     )
 end
