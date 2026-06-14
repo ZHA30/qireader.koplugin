@@ -35,7 +35,8 @@ Settings.cache_defaults = {
     content_ttl = 2592000,
     readlater_tag_ttl = 86400,
     fulltext_ttl = 2592000,
-    content_prefetch_count = 6,
+    content_prefetch_pages = 2,
+    content_prefetch_count = 10,
     stream_preload_pages_before_end = 2,
 }
 

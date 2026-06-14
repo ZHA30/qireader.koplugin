@@ -148,35 +148,6 @@ function methods:cacheFullText(entry, payload)
     end
 end
 
-function methods:getArticleContentPrefetchEntries(target, current_entry)
-    local cache_settings = self.settings.cache or {}
-    local count = math.max(1, tonumber(cache_settings.content_prefetch_count) or 6)
-    local entries = {}
-    if current_entry then
-        entries[#entries + 1] = current_entry
-    end
-    if not target or not target.stream_id then
-        return entries
-    end
-    local widget = self.article_widget
-    if not widget
-        or widget.closing
-        or not widget.getLoadedEntryIndex
-        or not widget.target
-        or widget.target.stream_id ~= target.stream_id then
-        return entries
-    end
-    local index, loaded_entries = widget:getLoadedEntryIndex(current_entry)
-    if not index then
-        return entries
-    end
-    local last_index = math.min(#loaded_entries, index + count - 1)
-    for i = index + 1, last_index do
-        entries[#entries + 1] = loaded_entries[i]
-    end
-    return entries
-end
-
 function methods:requestArticleContents(target, entries, job_key, options, callback)
     options = options or {}
     callback = callback or function() end
@@ -250,11 +221,19 @@ function methods:requestArticleContents(target, entries, job_key, options, callb
     poll()
 end
 
-function methods:prefetchAdjacentArticleContents(target, current_entry)
-    if not target or not current_entry or not NetworkMgr:isOnline() then
+function methods:prefetchArticleContents(target, entries, owner_widget)
+    if not target or not target.stream_id or not entries or not NetworkMgr:isOnline() then
         return
     end
-    local entries = self:getArticleContentPrefetchEntries(target, current_entry)
+    if not self.cache or not self.cache:isEnabled() then
+        return
+    end
+    if owner_widget
+        and (owner_widget.closing
+            or owner_widget.target ~= target
+            or self.article_widget ~= owner_widget) then
+        return
+    end
     local missing_entries = {}
     for i = 1, #entries do
         local entry = entries[i]
@@ -271,6 +250,12 @@ function methods:prefetchAdjacentArticleContents(target, current_entry)
     end
     self:requestArticleContents(target, missing_entries, job_key, { background = true }, function(payloads, err)
         if err or not payloads then
+            return
+        end
+        if owner_widget
+            and (owner_widget.closing
+                or owner_widget.target ~= target
+                or self.article_widget ~= owner_widget) then
             return
         end
         for i = 1, #missing_entries do
@@ -854,10 +839,12 @@ function methods:openArticleContent(target, entry, detail_widget, owner_widget)
     if not self:isArticleContentOwnerCurrent(target, detail_widget, owner_widget) then
         return
     end
+    if not entry or not entry.id then
+        return
+    end
     local cached_payload = self:getCachedArticleContent(target, entry)
     if cached_payload then
         self:showArticleContent(target, entry, cached_payload, detail_widget)
-        self:prefetchAdjacentArticleContents(target, entry)
         return
     end
     if NetworkMgr and NetworkMgr.willRerunWhenOnline
@@ -866,17 +853,10 @@ function methods:openArticleContent(target, entry, detail_widget, owner_widget)
         end) then
         return
     end
-    local request_entries = self:getArticleContentPrefetchEntries(target, entry)
-    local missing_entries = {}
-    for i = 1, #request_entries do
-        local item = request_entries[i]
-        if item and item.id and not self:getCachedArticleContent(target, item) then
-            missing_entries[#missing_entries + 1] = item
-        end
-    end
     if target and target.stream_id then
         self:cancelPendingJob(CONTENT_PREFETCH_JOB_PREFIX .. tostring(target.stream_id))
     end
+    local missing_entries = { entry }
     self:requestArticleContents(target, missing_entries, ARTICLE_CONTENT_JOB_KEY, nil, function(payloads, err)
         if err == "cancelled" or err == "unauthorized" then
             return
@@ -888,10 +868,7 @@ function methods:openArticleContent(target, entry, detail_widget, owner_widget)
             self:showTransientMessage(_("Cannot load article content."))
             return
         end
-        for i = 1, #missing_entries do
-            local item = missing_entries[i]
-            self:cacheArticleContent(target, item, payloads[tostring(item.id)])
-        end
+        self:cacheArticleContent(target, entry, payloads[tostring(entry.id)])
         local payload = payloads[tostring(entry.id)] or self:getCachedArticleContent(target, entry)
         if not payload then
             self:showTransientMessage(_("Cannot load article content."))

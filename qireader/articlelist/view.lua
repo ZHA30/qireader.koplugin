@@ -518,6 +518,32 @@ function methods:getLoadedPageForEntryIndex(entry_index)
     return nil
 end
 
+function methods:getContentPrefetchEntries()
+    local entries = {}
+    local cache_settings = self.controller and self.controller.settings and self.controller.settings.cache or {}
+    local page_count = math.max(1, tonumber(cache_settings.content_prefetch_pages) or 2)
+    local max_entries = math.max(1, tonumber(cache_settings.content_prefetch_count) or 10)
+    local last_page = math.min(self.pages or self.show_page, self.show_page + page_count - 1)
+    for page_number = self.show_page, last_page do
+        local page = self.loaded_pages[page_number]
+        local page_entries = page and page.entries or {}
+        for i = 1, #page_entries do
+            entries[#entries + 1] = page_entries[i]
+            if #entries >= max_entries then
+                return entries
+            end
+        end
+    end
+    return entries
+end
+
+function methods:prefetchVisibleArticleContents()
+    if self.closing or not self.controller or not self.controller.prefetchArticleContents then
+        return
+    end
+    self.controller:prefetchArticleContents(self.target, self:getContentPrefetchEntries(), self)
+end
+
 function methods:syncArticleListPageToEntryIndex(entry_index, force_refresh)
     local page_number = self:getLoadedPageForEntryIndex(entry_index)
     if not page_number then
@@ -534,6 +560,7 @@ function methods:syncArticleListPageToEntryIndex(entry_index, force_refresh)
     if page_changed or force_refresh then
         self:refresh()
         self:maybePreloadNextChunk()
+        self:prefetchVisibleArticleContents()
     end
 end
 
