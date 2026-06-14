@@ -646,8 +646,17 @@ function Controller:refreshArticleWidget(widget)
     if self.article_widget and not widget then
         widget = self.article_widget
     end
-    if widget and widget.reloadFromFirstPage then
-        widget:reloadFromFirstPage()
+    if widget and widget.reloadFromRemote then
+        widget:reloadFromRemote()
+    end
+end
+
+function Controller:refreshArticleWidgetLayout(widget)
+    if self.article_widget and not widget then
+        widget = self.article_widget
+    end
+    if widget and widget.reloadLayoutOnly then
+        widget:reloadLayoutOnly()
     end
 end
 
@@ -701,7 +710,12 @@ function Controller:showArticleNumberInput(widget, setting_key, title, current_v
                         self.settings[setting_key] = value
                         self.save_settings()
                         UIManager:close(dialog)
-                        self:refreshArticleWidget(widget)
+                        if setting_key == "article_items_per_page"
+                            or setting_key == "article_title_font_size" then
+                            self:refreshArticleWidgetLayout(widget)
+                        else
+                            self:refreshArticleWidget(widget)
+                        end
                     end,
                 },
             },
@@ -734,14 +748,11 @@ function Controller:markPageRead(page)
     end
 end
 
-function Controller:maybeMarkArticlePageRead(widget)
-    if not widget or not self.settings.article_mark_read_on_page_turn then
+function Controller:maybeMarkArticlePageRead(page)
+    if not page or not self.settings.article_mark_read_on_page_turn then
         return
     end
-    local page = widget.loaded_pages and widget.loaded_pages[widget.show_page] or nil
-    if page then
-        self:markPageRead(page)
-    end
+    self:markPageRead(page)
 end
 
 function Controller:toggleReadLater(entry, widget)

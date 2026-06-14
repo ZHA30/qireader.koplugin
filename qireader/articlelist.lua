@@ -183,13 +183,19 @@ local QiArticleListWidget = FocusManager:extend{
     show_page = 1,
     pages = 1,
     loaded_pages = nil,
+    loaded_chunks = nil,
+    preloading_chunks = nil,
     has_more = false,
     loading = false,
     closing = false,
+    remote_batch_size = 50,
+    preload_pages_before_end = 1,
 }
 
 function QiArticleListWidget:init()
     self.loaded_pages = {}
+    self.loaded_chunks = {}
+    self.preloading_chunks = {}
     self.layout = {}
     self.dimen = Geom:new{
         w = Screen:getWidth(),
@@ -285,6 +291,16 @@ function QiArticleListWidget:getPerPage()
     return self.controller.settings.article_items_per_page or 5
 end
 
+function QiArticleListWidget:getRemoteBatchSize()
+    return self.remote_batch_size or 50
+end
+
+function QiArticleListWidget:getPagesPerChunk()
+    local per_page = math.max(1, self:getPerPage())
+    local remote_batch = math.max(per_page, self:getRemoteBatchSize())
+    return math.max(1, math.ceil(remote_batch / per_page))
+end
+
 function QiArticleListWidget:getTitleFontSize()
     return self.controller.settings.article_title_font_size or 18
 end
@@ -321,7 +337,7 @@ end
 
 function QiArticleListWidget:buildStreamQuery(cursor)
     local query = {
-        count = self:getPerPage(),
+        count = self:getRemoteBatchSize(),
         articleOrder = self.controller.settings.article_order_oldest_first and 1 or 0,
         unreadOnly = self.controller.settings.article_show_unread_only and true or nil,
     }
@@ -339,53 +355,194 @@ function QiArticleListWidget:getStreamId()
     return self.target.stream_id
 end
 
+function QiArticleListWidget:getChunkIndexForPage(page)
+    return math.floor((page - 1) / self:getPagesPerChunk()) + 1
+end
+
+function QiArticleListWidget:getPageOffsetInChunk(page)
+    local per_page = math.max(1, self:getPerPage())
+    local chunk_index = self:getChunkIndexForPage(page)
+    local first_page = (chunk_index - 1) * self:getPagesPerChunk() + 1
+    return (page - first_page) * per_page
+end
+
+function QiArticleListWidget:buildPageFromChunk(page)
+    local chunk_index = self:getChunkIndexForPage(page)
+    local chunk = self.loaded_chunks[chunk_index]
+    if not chunk then
+        return nil
+    end
+    local per_page = math.max(1, self:getPerPage())
+    local start_index = self:getPageOffsetInChunk(page) + 1
+    if start_index > #chunk.entries then
+        return nil
+    end
+    local end_index = math.min(#chunk.entries, start_index + per_page - 1)
+    local entries = {}
+    for i = start_index, end_index do
+        entries[#entries + 1] = chunk.entries[i]
+    end
+    return {
+        entries = entries,
+        has_more = end_index < #chunk.entries or chunk.has_more,
+        next_cursor = chunk.next_cursor,
+        chunk_index = chunk_index,
+        page_start_index = start_index,
+        page_end_index = end_index,
+    }
+end
+
+function QiArticleListWidget:rebuildLoadedPages()
+    self.loaded_pages = {}
+    local page = 1
+    while true do
+        local built = self:buildPageFromChunk(page)
+        if not built then
+            break
+        end
+        self.loaded_pages[page] = built
+        page = page + 1
+    end
+    self.pages = math.max(1, page - 1)
+    local last_page = self.loaded_pages[self.pages]
+    self.has_more = last_page and last_page.has_more or false
+    if self.show_page > self.pages then
+        self.show_page = self.pages
+    end
+end
+
+function QiArticleListWidget:getChunkCursor(chunk_index)
+    if chunk_index <= 1 then
+        return nil
+    end
+    local previous_chunk = self.loaded_chunks[chunk_index - 1]
+    return previous_chunk and previous_chunk.next_cursor or nil
+end
+
+function QiArticleListWidget:canLoadChunk(chunk_index)
+    if chunk_index <= 1 then
+        return true
+    end
+    return self.loaded_chunks[chunk_index - 1] ~= nil
+end
+
+function QiArticleListWidget:fetchChunk(chunk_index, options)
+    options = options or {}
+    if self.closing or self.loaded_chunks[chunk_index] then
+        return nil, "skip"
+    end
+    if not self:canLoadChunk(chunk_index) then
+        return nil, "blocked"
+    end
+    if options.background then
+        if self.loading or self.preloading_chunks[chunk_index] then
+            return nil, "busy"
+        end
+        self.preloading_chunks[chunk_index] = true
+    else
+        if self.loading then
+            return nil, "busy"
+        end
+        self.loading = true
+    end
+
+    local response = self.controller.client:getStream(
+        self:getStreamId(),
+        self:buildStreamQuery(self:getChunkCursor(chunk_index))
+    )
+
+    if options.background then
+        self.preloading_chunks[chunk_index] = nil
+    else
+        self.loading = false
+    end
+
+    if self.closing then
+        return nil, "closed"
+    end
+    if response.code == 401 then
+        self.controller:handleUnauthorized()
+        return nil, "unauthorized"
+    end
+    if response.code ~= 200 or not response.json or not response.json.result then
+        return nil, "error"
+    end
+
+    self.loaded_chunks[chunk_index] = self.controller:normalizeArticlePage(self.target, response.json.result)
+    self:rebuildLoadedPages()
+    return self.loaded_chunks[chunk_index], nil
+end
+
+function QiArticleListWidget:maybePreloadNextChunk()
+    if self.loading or self.closing then
+        return
+    end
+    local current_page = self.loaded_pages[self.show_page]
+    if not current_page then
+        return
+    end
+    local current_chunk_index = current_page.chunk_index
+    local next_chunk_index = current_chunk_index + 1
+    if self.loaded_chunks[next_chunk_index] or self.preloading_chunks[next_chunk_index] then
+        return
+    end
+    if not current_page.has_more then
+        return
+    end
+    local pages_per_chunk = self:getPagesPerChunk()
+    local first_page_in_chunk = (current_chunk_index - 1) * pages_per_chunk + 1
+    local last_page_in_chunk = first_page_in_chunk + pages_per_chunk - 1
+    local trigger_page = math.max(first_page_in_chunk, last_page_in_chunk - (self.preload_pages_before_end or 1))
+    if self.show_page < trigger_page then
+        return
+    end
+    local _, err = self:fetchChunk(next_chunk_index, { background = true })
+    if not err then
+        self:refresh()
+    end
+end
+
 function QiArticleListWidget:loadPage(page)
     if self.closing then
         return
     end
+    local previous_page_number = self.show_page
+    local previous_page = self.loaded_pages[previous_page_number]
     if self.loaded_pages[page] then
-        local changed = self.show_page ~= page
+        local changed = previous_page_number ~= page
         self.show_page = page
         if changed then
-            self.controller:maybeMarkArticlePageRead(self)
+            self.controller:maybeMarkArticlePageRead(previous_page)
         end
         self:refresh()
+        self:maybePreloadNextChunk()
         return
     end
     if self.loading then
         return
     end
-    local previous = self.loaded_pages[page - 1]
-    local cursor = previous and previous.next_cursor or nil
-    if page > 1 and not previous then
-        return
-    end
-    local previous_page = self.show_page
-    self.loading = true
+    local chunk_index = self:getChunkIndexForPage(page)
     self.show_page = page
     self:refreshFooter()
-    local response = self.controller.client:getStream(self:getStreamId(), self:buildStreamQuery(cursor))
-    self.loading = false
-    if self.closing then
-        return
-    end
-    if response.code == 401 then
-        self.controller:handleUnauthorized()
-        return
-    end
-    if response.code ~= 200 or not response.json or not response.json.result then
-        self.show_page = previous_page
-        self.controller:showTransientMessage(_("Cannot load articles."))
+    local _, err = self:fetchChunk(chunk_index)
+    if err == "blocked" or err == "busy" then
+        self.show_page = previous_page_number
         self:refresh()
         return
     end
-    self.loaded_pages[page] = self.controller:normalizeArticlePage(self.target, response.json.result)
-    self.pages = math.max(self.pages, page)
-    self.has_more = self.loaded_pages[page].has_more
-    if previous_page ~= page then
-        self.controller:maybeMarkArticlePageRead(self)
+    if err then
+        self.show_page = previous_page_number
+        if err == "error" then
+            self.controller:showTransientMessage(_("Cannot load articles."))
+        end
+        self:refresh()
+        return
+    end
+    if previous_page_number ~= page then
+        self.controller:maybeMarkArticlePageRead(previous_page)
     end
     self:refresh()
+    self:maybePreloadNextChunk()
 end
 
 function QiArticleListWidget:refreshFooter()
@@ -525,8 +682,7 @@ function QiArticleListWidget:prevPage()
     if self.show_page <= 1 then
         return false
     end
-    self.show_page = self.show_page - 1
-    self:refresh()
+    self:loadPage(self.show_page - 1)
     return true
 end
 
@@ -653,7 +809,17 @@ function QiArticleListWidget:onCloseWidget()
 end
 
 function QiArticleListWidget:reloadFromFirstPage()
+    self:reloadLayoutOnly()
+end
+
+function QiArticleListWidget:reloadLayoutOnly()
+    self:rebuildLoadedPages()
+    self:refresh()
+end
+
+function QiArticleListWidget:reloadFromRemote()
     self.loaded_pages = {}
+    self.loaded_chunks = {}
     self.show_page = 1
     self.pages = 1
     self.has_more = false
