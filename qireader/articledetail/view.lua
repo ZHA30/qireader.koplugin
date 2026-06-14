@@ -63,12 +63,6 @@ function methods:saveViewSettings()
     end
     self.controller.settings.article_detail.font_size = self.font_size
     self.controller.settings.article_detail.font_face = self.font_face
-    self.controller.settings.article_detail.margin_top = nil
-    self.controller.settings.article_detail.margin_bottom = nil
-    self.controller.settings.article_detail.margin_left = nil
-    self.controller.settings.article_detail.margin_right = nil
-    self.controller.settings.article_detail.margin_vertical = nil
-    self.controller.settings.article_detail.margin_horizontal = nil
     if self.controller.save_settings then
         self.controller.save_settings()
     end

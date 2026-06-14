@@ -68,12 +68,10 @@ local function groupSubscriptions(data, unread_by_subscription_id)
     end
 
     local ungrouped = {}
-    local ungrouped_unread_count = 0
     for i = 1, #subscriptions do
         local subscription = subscriptions[i]
         if not grouped_subscription_ids[subscription.id] then
             table.insert(ungrouped, subscription)
-            ungrouped_unread_count = ungrouped_unread_count + (subscription.unread_count or 0)
         end
     end
     table.sort(ungrouped, function(left, right)
@@ -83,9 +81,7 @@ local function groupSubscriptions(data, unread_by_subscription_id)
     return {
         groups = ordered,
         ungrouped = ungrouped,
-        ungrouped_unread_count = ungrouped_unread_count,
         subscriptions = subscriptions,
-        version = result.version,
     }
 end
 
@@ -96,7 +92,6 @@ function methods:showGroups(data, unread_data)
     local grouped = groupSubscriptions(data, makeUnreadMap(unread_data))
     self.groups = grouped.groups
     self.ungrouped = grouped.ungrouped
-    self.ungrouped_unread_count = grouped.ungrouped_unread_count
     self.subscriptions = grouped.subscriptions
     local valid_groups = {}
     for i = 1, #self.groups do
@@ -107,7 +102,6 @@ function methods:showGroups(data, unread_data)
             self.expanded_groups[group_id] = nil
         end
     end
-    self.settings.subscriptions_version = grouped.version
     self.save_settings()
     self:showGroupsPage()
 end
@@ -119,7 +113,6 @@ function methods:showGroupsFromCache()
     end
     self.groups = {}
     self.ungrouped = {}
-    self.ungrouped_unread_count = 0
     self.subscriptions = {}
     self:showGroupsPage()
 end
@@ -199,7 +192,7 @@ function methods:normalizeArticlePage(target, result)
     return normalized
 end
 
-function methods.formatArticleDate(self, published_at)
+function methods:formatArticleDate(published_at)
     if not self or not published_at then
         return "--"
     end

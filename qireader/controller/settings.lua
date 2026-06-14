@@ -12,18 +12,6 @@ local ARTICLE_SETTINGS_SCHEMA = {
     "title_font_size",
 }
 
-local function copyTable(source)
-    local copy = {}
-    for key, value in pairs(source or {}) do
-        if type(value) == "table" then
-            copy[key] = copyTable(value)
-        else
-            copy[key] = value
-        end
-    end
-    return copy
-end
-
 local function copyArticleSettings(source)
     local result = {}
     for i = 1, #ARTICLE_SETTINGS_SCHEMA do
@@ -58,7 +46,7 @@ function methods:getArticleSettingsRoot()
     end
     local root = self.settings.article_settings
     if type(root.global) ~= "table" then
-        root.global = copyTable(Settings.article_defaults)
+        root.global = copyArticleSettings(Settings.article_defaults)
     end
     if type(root.custom) ~= "table" then
         root.custom = {}

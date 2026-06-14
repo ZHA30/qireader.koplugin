@@ -2,6 +2,17 @@
 
 local Settings = {}
 
+local function deepCopy(value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local copy = {}
+    for key, item in pairs(value) do
+        copy[key] = deepCopy(item)
+    end
+    return copy
+end
+
 Settings.article_defaults = {
     show_unread_only = false,
     order_oldest_first = false,
@@ -19,34 +30,13 @@ Settings.defaults = {
     api_base = "https://www.qireader.com/api",
     cookie = nil,
     user = nil,
-    subscriptions_version = nil,
     show_unread_only = false,
     article_settings = {
-        global = {
-            show_unread_only = false,
-            order_oldest_first = false,
-            mark_read_on_page_turn = false,
-            items_per_page = 5,
-            title_font_size = 18,
-        },
+        global = deepCopy(Settings.article_defaults),
         custom = {},
     },
-    article_detail = {
-        font_size = Settings.article_detail_defaults.font_size,
-        font_face = Settings.article_detail_defaults.font_face,
-    },
+    article_detail = deepCopy(Settings.article_detail_defaults),
 }
-
-local function deepCopy(value)
-    if type(value) ~= "table" then
-        return value
-    end
-    local copy = {}
-    for key, item in pairs(value) do
-        copy[key] = deepCopy(item)
-    end
-    return copy
-end
 
 local function mergeDefaults(target, defaults)
     for key, value in pairs(defaults) do
@@ -102,10 +92,24 @@ local function migrateArticleSettings(settings)
     settings.article_title_font_size = nil
 end
 
+local function cleanupDeprecatedSettings(settings)
+    settings.subscriptions_version = nil
+    local article_detail = settings.article_detail
+    if type(article_detail) == "table" then
+        article_detail.margin_top = nil
+        article_detail.margin_bottom = nil
+        article_detail.margin_left = nil
+        article_detail.margin_right = nil
+        article_detail.margin_vertical = nil
+        article_detail.margin_horizontal = nil
+    end
+end
+
 function Settings.load()
     local settings = G_reader_settings:readSetting("qireader", deepCopy(Settings.defaults))
     migrateArticleSettings(settings)
     mergeDefaults(settings, Settings.defaults)
+    cleanupDeprecatedSettings(settings)
     return settings
 end
 
@@ -116,7 +120,6 @@ end
 function Settings.clearSession(settings)
     settings.cookie = nil
     settings.user = nil
-    settings.subscriptions_version = nil
 end
 
 return Settings
