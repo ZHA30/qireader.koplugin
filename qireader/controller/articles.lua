@@ -1,6 +1,7 @@
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../../i18n/po.lua")
 
 local ArticleContent = require("qireader.articlecontent")
+local ArticleImage = require("qireader.articleimage")
 local QiArticleDetailWidget = require("qireader.articledetail")
 local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
@@ -31,9 +32,9 @@ end
 
 local function buildArticleContent(entry, response)
     local content = response.json.result[1].content or entry.summary or ""
-    local formatted = ArticleContent.format(entry, content)
+    local formatted, media_refs = ArticleContent.format(entry, content)
     local title = entry.title or _("Untitled")
-    return formatted, title
+    return formatted, title, media_refs
 end
 
 function methods:syncReadLaterEntry(entry)
@@ -311,6 +312,10 @@ function methods:toggleReadLater(entry, widget)
     end)
 end
 
+function methods:openArticleImage(ref, widget)
+    ArticleImage.open(self, ref, widget)
+end
+
 function methods:openArticleContent(target, entry, detail_widget)
     if NetworkMgr and NetworkMgr.willRerunWhenOnline
         and NetworkMgr:willRerunWhenOnline(function()
@@ -364,16 +369,16 @@ function methods:openArticleContent(target, entry, detail_widget)
             self:showTransientMessage(_("Cannot load article content."))
             return
         end
-        local formatted, title = buildArticleContent(entry, response)
+        local formatted, title, media_refs = buildArticleContent(entry, response)
         if detail_widget
             and detail_widget.updateArticleDetail
             and not detail_widget.closing
             and self.article_detail_widget == detail_widget then
-            detail_widget:updateArticleDetail(entry, formatted, title)
+            detail_widget:updateArticleDetail(entry, formatted, title, media_refs)
             return
         end
         if self.article_widget then
-            self.article_widget:showArticleDetail(entry, formatted)
+            self.article_widget:showArticleDetail(entry, formatted, media_refs)
             return
         end
         local content_widget = QiArticleDetailWidget:new{
@@ -381,6 +386,7 @@ function methods:openArticleContent(target, entry, detail_widget)
             entry = entry,
             title = title,
             html = formatted,
+            media_refs = media_refs,
             on_close_article = function(closed_widget)
                 self:onArticleDetailClosed(closed_widget)
             end,

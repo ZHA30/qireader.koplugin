@@ -26,6 +26,7 @@ local QiArticleDetailWidget = InputContainer:extend{
     entry = nil,
     title = "",
     html = "",
+    media_refs = nil,
     css = ArticleContent.DEFAULT_CSS,
     closing = false,
     active_dialog = nil,
@@ -225,10 +226,13 @@ function QiArticleDetailWidget:refreshBottomButtons()
     self.button_table:init()
 end
 
-function QiArticleDetailWidget:updateArticleDetail(entry, html, title)
+function QiArticleDetailWidget:updateArticleDetail(entry, html, title, media_refs)
     self.entry = entry or self.entry
     self.html = html or self.html
     self.title = title or (entry and entry.title) or self.title
+    if media_refs ~= nil then
+        self.media_refs = media_refs
+    end
     if self.titlebar then
         self.titlebar:setTitle(self.title)
     end

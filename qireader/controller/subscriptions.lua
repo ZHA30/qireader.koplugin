@@ -183,6 +183,7 @@ function methods:normalizeArticlePage(target, result)
             timestamp = entry.timestamp,
             published_at = entry.publishedAt,
             summary = entry.summary,
+            url = entry.url,
             source_feed_id = entry.origin and entry.origin.feedId or nil,
             source_title = self:getSubscriptionTitleByFeedId(entry.origin and entry.origin.feedId or nil),
             date_text = self:formatArticleDate(entry.publishedAt),

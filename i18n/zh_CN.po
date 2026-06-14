@@ -166,6 +166,27 @@ msgstr "："
 msgid "[%s: %s]"
 msgstr "[%s：%s]"
 
+msgid "Unsupported image URL."
+msgstr "不支持的图片地址。"
+
+msgid "Image download failed."
+msgstr "图片下载失败。"
+
+msgid "Too many image redirects."
+msgstr "图片重定向次数过多。"
+
+msgid "Unsupported image format."
+msgstr "不支持的图片格式。"
+
+msgid "Cannot open image."
+msgstr "无法打开图片。"
+
+msgid "Downloading image..."
+msgstr "正在下载图片..."
+
+msgid "Image download interrupted."
+msgstr "图片下载已中断。"
+
 msgid "Cannot open article list."
 msgstr "无法打开文章列表。"
 

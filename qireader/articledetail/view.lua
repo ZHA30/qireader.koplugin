@@ -144,6 +144,9 @@ function methods:createScrollWidget()
         text_scroll_span = DETAIL_TEXT_SCROLL_SPAN,
         dialog = self,
         highlight_text_selection = true,
+        html_link_tapped_callback = function(link)
+            self:onHtmlLinkTapped(link)
+        end,
     }
 end
 
