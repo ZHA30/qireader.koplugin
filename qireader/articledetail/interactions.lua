@@ -12,7 +12,7 @@ local Device = require("device")
 local methods = {}
 
 function methods.getReadLaterButtonText()
-    return _("Later")
+    return _("RIT")
 end
 
 function methods:isReadLaterActive()

@@ -85,7 +85,7 @@ end
 
 local function getArticleButtonHeight(metrics)
     local action_button = Button:new{
-        text = _("Later"),
+        text = _("RIT"),
         width = metrics.action_width,
         radius = Size.radius.button,
         bordersize = Size.border.button,
@@ -143,7 +143,7 @@ function QiArticleItemWidget:rebuild()
     local subtitle_color = ARTICLE_DIM_TEXT_COLOR
     local action_color = item.is_read_later and ARTICLE_ACTION_DIM_COLOR or ARTICLE_ACTION_COLOR
     local action_button = Button:new{
-        text = _("Later"),
+        text = _("RIT"),
         width = metrics.action_width,
         radius = Size.radius.button,
         bordersize = Size.border.button,

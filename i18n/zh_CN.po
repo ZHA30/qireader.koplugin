@@ -94,8 +94,8 @@ msgstr "每页列表项"
 msgid "Items per page: %d"
 msgstr "每页列表项：%d"
 
-msgid "Later"
-msgstr "稍后"
+msgid "RIT"
+msgstr "稍后阅读"
 
 msgid "Previous"
 msgstr "上一个"
@@ -174,9 +174,6 @@ msgstr "无法解析稍后阅读标签。"
 
 msgid "Cannot update read-later state."
 msgstr "无法更新稍后阅读状态。"
-
-msgid "Later: On"
-msgstr "稍后：开"
 
 msgid "Monospace font"
 msgstr "等宽字体"
