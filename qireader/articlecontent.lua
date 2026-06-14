@@ -199,6 +199,15 @@ local function getAttr(attrs, name)
     return nil
 end
 
+local function hasClass(attrs, class_name)
+    local class_attr = getAttr(attrs, "class")
+    if not class_attr then
+        return false
+    end
+    local class_list = " " .. class_attr:gsub("%s+", " ") .. " "
+    return class_list:find("%s" .. escapePattern(class_name) .. "%s") ~= nil
+end
+
 local function addCandidate(candidates, value)
     if value and value ~= "" then
         candidates[#candidates + 1] = value
@@ -262,8 +271,9 @@ end
 
 local function dropBlocks(html)
     for tag in pairs(DROP_BLOCK_TAGS) do
-        html = html:gsub("<" .. tag .. "[^>]*>.-</" .. tag .. "%s*>", "")
-        html = html:gsub("<" .. tag .. "[^>]*/%s*>", "")
+        local tag_pattern = asciiCasePattern(tag)
+        html = html:gsub("<" .. tag_pattern .. "[^>]*>.-</" .. tag_pattern .. "%s*>", "")
+        html = html:gsub("<" .. tag_pattern .. "[^>]*/%s*>", "")
     end
     return html
 end
@@ -301,13 +311,13 @@ local function sanitizeOpenTag(tag, attrs)
     if tag == "a" then
         return "<a>"
     end
-    if tag == "p" and attrs and attrs:match('class%s*=%s*["\'][^"\']*media%-placeholder[^"\']*["\']') then
+    if tag == "p" and hasClass(attrs, "media-placeholder") then
         return '<p class="media-placeholder">'
     end
-    if tag == "p" and attrs and attrs:match('class%s*=%s*["\'][^"\']*meta%-line[^"\']*["\']') then
+    if tag == "p" and hasClass(attrs, "meta-line") then
         return '<p class="meta-line">'
     end
-    if tag == "section" and attrs and attrs:match('class%s*=%s*["\'][^"\']*article%-meta[^"\']*["\']') then
+    if tag == "section" and hasClass(attrs, "article-meta") then
         return '<section class="article-meta">'
     end
     if tag == "hr" then
@@ -328,7 +338,7 @@ local function sanitizeCloseTag(tag)
 end
 
 local function sanitizeTags(html)
-    html = html:gsub("<!DOCTYPE.-[>\n]", "")
+    html = html:gsub("<" .. asciiCasePattern("!doctype") .. ".-[>\n]", "")
     html = html:gsub("<!%-%-.-%-%->", "")
     html = html:gsub("<%?xml.-%?>", "")
     html = html:gsub("<([%w:_-]+)([^>]*)/?>", function(tag, attrs)
@@ -350,13 +360,18 @@ end
 local function normalizeHtml(html)
     html = html or ""
     html = normalizeWhitespace(html)
-    html = html:gsub("<body[^>]*>", "")
-    html = html:gsub("</body%s*>", "")
-    html = html:gsub("<html[^>]*>", "")
-    html = html:gsub("</html%s*>", "")
-    html = html:gsub("<head[^>]*>.-</head%s*>", "")
-    html = html:gsub("<title[^>]*>.-</title%s*>", "")
-    html = html:gsub("<meta[^>]*>", "")
+    local body_tag = asciiCasePattern("body")
+    local html_tag = asciiCasePattern("html")
+    local head_tag = asciiCasePattern("head")
+    local title_tag = asciiCasePattern("title")
+    local meta_tag = asciiCasePattern("meta")
+    html = html:gsub("<" .. body_tag .. "[^>]*>", "")
+    html = html:gsub("</" .. body_tag .. "%s*>", "")
+    html = html:gsub("<" .. html_tag .. "[^>]*>", "")
+    html = html:gsub("</" .. html_tag .. "%s*>", "")
+    html = html:gsub("<" .. head_tag .. "[^>]*>.-</" .. head_tag .. "%s*>", "")
+    html = html:gsub("<" .. title_tag .. "[^>]*>.-</" .. title_tag .. "%s*>", "")
+    html = html:gsub("<" .. meta_tag .. "[^>]*>", "")
     return html
 end
 
