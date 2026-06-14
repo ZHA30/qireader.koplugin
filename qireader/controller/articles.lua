@@ -45,7 +45,9 @@ end
 
 function methods:refreshReadLaterWidgets()
     if self.article_widget and self.article_widget.loaded_chunks then
-        for _, chunk in pairs(self.article_widget.loaded_chunks) do
+        local loaded_chunks = self.article_widget.loaded_chunks
+        for chunk_index in pairs(loaded_chunks) do
+            local chunk = loaded_chunks[chunk_index]
             local entries = chunk and chunk.entries or nil
             if entries then
                 for i = 1, #entries do

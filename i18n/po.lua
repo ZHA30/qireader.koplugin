@@ -49,7 +49,7 @@ local function parsePO(path)
     return translations
 end
 
-local lang = G_reader_settings:readSetting("language")
+local lang = G_reader_settings and G_reader_settings:readSetting("language")
     or os.getenv("LANGUAGE")
     or os.getenv("LANG")
     or "en"

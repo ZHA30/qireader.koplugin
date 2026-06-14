@@ -307,7 +307,7 @@ function methods:loadPage(page)
     self.loading = true
     self:refreshFooter()
     self:refresh()
-    local _, err = self:fetchChunk(chunk_index, nil, function(_chunk, callback_err)
+    local err = select(2, self:fetchChunk(chunk_index, nil, function(_chunk, callback_err)
         if self.closing then
             return
         end
@@ -323,7 +323,7 @@ function methods:loadPage(page)
             self.controller:maybeMarkArticlePageRead(previous_page)
         end
         self:refresh()
-    end)
+    end))
     if err == "blocked" or err == "busy" then
         self.show_page = previous_page_number
         self.loading = false
