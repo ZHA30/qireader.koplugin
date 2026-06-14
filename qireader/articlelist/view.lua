@@ -480,42 +480,149 @@ function methods:showArticleDetail(entry, html, media_refs)
     UIManager:show(detail_widget)
 end
 
-function methods:getVisibleEntryIndex(entry)
-    local page = self.loaded_pages[self.show_page]
-    local entries = page and page.entries or nil
-    if not entry or not entries then
-        return nil
+function methods:getLoadedEntryIndex(entry)
+    local entries = self:getLoadedEntries()
+    local entry_id = entry and entry.id or nil
+    if not entry then
+        return nil, entries
     end
     for i = 1, #entries do
-        if entries[i] == entry or entries[i].id == entry.id then
-            return i
+        if entries[i] == entry or (entry_id ~= nil and entries[i].id == entry_id) then
+            return i, entries
+        end
+    end
+    return nil, entries
+end
+
+function methods:getLoadedPageForEntryIndex(entry_index)
+    if not entry_index then
+        return nil
+    end
+    for page_number = 1, self.pages do
+        local page = self.loaded_pages[page_number]
+        if page
+            and page.page_start_index
+            and page.page_end_index
+            and entry_index >= page.page_start_index
+            and entry_index <= page.page_end_index then
+            return page_number
         end
     end
     return nil
 end
 
+function methods:syncArticleListPageToEntryIndex(entry_index, force_refresh)
+    local page_number = self:getLoadedPageForEntryIndex(entry_index)
+    if not page_number then
+        return
+    end
+    local page_changed = page_number ~= self.show_page
+    local previous_page = self.loaded_pages[self.show_page]
+    if page_changed then
+        self.show_page = page_number
+        if self.controller then
+            self.controller:maybeMarkArticlePageRead(previous_page)
+        end
+    end
+    if page_changed or force_refresh then
+        self:refresh()
+        self:maybePreloadNextChunk()
+    end
+end
+
+function methods:getAdjacentLoadedArticle(entry, offset)
+    local index, entries = self:getLoadedEntryIndex(entry)
+    if not index then
+        return nil, nil, entries
+    end
+    local adjacent_index = index + offset
+    return entries[adjacent_index], adjacent_index, entries
+end
+
+function methods:canLoadNextAdjacentArticle(entry)
+    local index, entries = self:getLoadedEntryIndex(entry)
+    return index ~= nil and index == #entries and self.has_more == true
+end
+
 function methods:canShowAdjacentArticle(entry, offset)
-    local index = self:getVisibleEntryIndex(entry)
-    local page = self.loaded_pages[self.show_page]
-    local entries = page and page.entries or nil
-    if not index or not entries then
+    local adjacent_entry = self:getAdjacentLoadedArticle(entry, offset)
+    if adjacent_entry then
+        return true
+    end
+    return offset > 0 and self:canLoadNextAdjacentArticle(entry)
+end
+
+function methods:openAdjacentLoadedArticle(current_entry, offset, widget, force_refresh)
+    if widget and widget.closing then
         return false
     end
-    return entries[index + offset] ~= nil
+    local next_entry, next_index = self:getAdjacentLoadedArticle(current_entry, offset)
+    if not next_entry or not self.controller then
+        return false
+    end
+    self:syncArticleListPageToEntryIndex(next_index, force_refresh)
+    self.controller:openArticleContent(self.target, next_entry, widget)
+    return true
+end
+
+function methods:loadNextAdjacentArticle(current_entry, widget)
+    if widget and (widget.closing or self.detail_widget ~= widget) then
+        return
+    end
+    if self.loading or self.pending_request then
+        if self.controller then
+            self.controller:showTransientMessage(_("Loading..."))
+        end
+        return
+    end
+    local chunk_index = self:getNextLoadableChunkIndex()
+    if not chunk_index then
+        return
+    end
+    local current_entry_id = current_entry and current_entry.id or nil
+    local err = select(2, self:fetchChunk(chunk_index, { background = true }, function(_chunk, fetch_err)
+        if self.closing
+            or not widget
+            or widget.closing
+            or self.detail_widget ~= widget
+            or not widget.entry
+            or (current_entry_id and widget.entry.id ~= current_entry_id) then
+            return
+        end
+        if fetch_err then
+            self:refresh()
+            if fetch_err == "error" and self.controller then
+                self.controller:showTransientMessage(_("Cannot load articles."))
+            end
+            return
+        end
+        if not self:openAdjacentLoadedArticle(current_entry, 1, widget, true) then
+            self:refresh()
+            if widget.refreshBottomButtons then
+                widget:refreshBottomButtons()
+            end
+        end
+    end))
+    if err == "busy" then
+        if self.controller then
+            self.controller:showTransientMessage(_("Loading..."))
+        end
+    elseif err == "skip" then
+        self:openAdjacentLoadedArticle(current_entry, 1, widget)
+    elseif err and err ~= "blocked" then
+        if self.controller then
+            self.controller:showTransientMessage(_("Cannot load articles."))
+        end
+    end
 end
 
 function methods:showAdjacentArticleDetail(current_entry, offset, widget)
-    local page = self.loaded_pages[self.show_page]
-    local entries = page and page.entries or nil
-    local index = self:getVisibleEntryIndex(current_entry)
-    if not entries or not index then
+    if self:openAdjacentLoadedArticle(current_entry, offset, widget) then
         return
     end
-    local next_entry = entries[index + offset]
-    if not next_entry then
-        return
+    if offset > 0 and self:canLoadNextAdjacentArticle(current_entry) then
+        self:loadNextAdjacentArticle(current_entry, widget)
     end
-    self.controller:openArticleContent(self.target, next_entry, widget)
 end
 
 function methods:onCloseWidget()
