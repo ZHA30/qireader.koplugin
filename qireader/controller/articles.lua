@@ -101,6 +101,23 @@ local function mapArticleContentPayloads(entries, response)
     return mapped
 end
 
+local function getArticlePageTarget(page)
+    local first_entry = page and page.entries and page.entries[1] or nil
+    return first_entry and first_entry.target or nil
+end
+
+local function articlePageHasUnreadEntries(page)
+    if not page or not page.entries then
+        return false
+    end
+    for i = 1, #page.entries do
+        if page.entries[i].status == 0 then
+            return true
+        end
+    end
+    return false
+end
+
 function methods:getArticleContentCacheKey(target, entry)
     if not target or not target.stream_id or not entry or not entry.id then
         return nil
@@ -498,10 +515,10 @@ end
 
 function methods:markPageRead(page)
     if not NetworkMgr:isOnline() then
-        return
+        return false
     end
     if not page or not page.entries or #page.entries == 0 then
-        return
+        return false
     end
     local unread_ids = {}
     for i = 1, #page.entries do
@@ -511,7 +528,7 @@ function methods:markPageRead(page)
         end
     end
     if #unread_ids == 0 then
-        return
+        return false
     end
     for i = 1, #page.entries do
         page.entries[i].status = 1
@@ -526,7 +543,7 @@ function methods:markPageRead(page)
         },
     })
     if not job then
-        return
+        return true
     end
     local job_key = buildEntryIdsJobKey(PAGE_READ_MARK_JOB_PREFIX, unread_ids)
     local job_token = self:nextJobToken(job_key)
@@ -556,15 +573,22 @@ function methods:markPageRead(page)
         end
     end
     poll()
+    return true
 end
 
 function methods:maybeMarkArticlePageRead(page)
-    local first_entry = page and page.entries and page.entries[1] or nil
-    local target = first_entry and first_entry.target or nil
+    local target = getArticlePageTarget(page)
     if not page or self:getArticleSetting(target, "mark_read_on_page_turn") ~= true then
-        return
+        return false
     end
-    self:markPageRead(page)
+    return self:markPageRead(page)
+end
+
+function methods:canMarkArticlePageRead(page)
+    local target = getArticlePageTarget(page)
+    return NetworkMgr:isOnline()
+        and self:getArticleSetting(target, "mark_read_on_page_turn") == true
+        and articlePageHasUnreadEntries(page)
 end
 
 function methods:applyArticleReadState(entry)

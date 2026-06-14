@@ -166,7 +166,9 @@ function methods:refreshFooter()
     table.insert(self.footer_group, self.footer_next_button)
 
     local can_go_prev = self.show_page > 1
-    local can_go_next = self.loaded_pages[self.show_page + 1] ~= nil or self.has_more
+    local can_go_next = self.loaded_pages[self.show_page + 1] ~= nil
+        or self.has_more
+        or self:canMarkCurrentPageReadOnForwardBoundary()
     self.footer_first_button:enableDisable(can_go_prev)
     self.footer_prev_button:enableDisable(can_go_prev)
     self.footer_next_button:enableDisable(can_go_next)
@@ -244,13 +246,30 @@ function methods:refresh()
     end)
 end
 
+function methods:canMarkCurrentPageReadOnForwardBoundary()
+    return self.controller
+        and self.controller.canMarkArticlePageRead
+        and self.controller:canMarkArticlePageRead(self.loaded_pages[self.show_page])
+end
+
+function methods:markCurrentPageReadOnForwardBoundary()
+    if not self.controller or not self.controller.maybeMarkArticlePageRead then
+        return false
+    end
+    if self.controller:maybeMarkArticlePageRead(self.loaded_pages[self.show_page]) then
+        self:refresh()
+        return true
+    end
+    return false
+end
+
 function methods:nextPage()
     local next_page = self.show_page + 1
     if self.loaded_pages[next_page] or self.has_more then
         self:loadPage(next_page)
         return true
     end
-    return false
+    return self:markCurrentPageReadOnForwardBoundary()
 end
 
 function methods:prevPage()
