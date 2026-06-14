@@ -145,6 +145,27 @@ msgstr "无法解析稍后阅读标签。"
 msgid "Cannot update read-later state."
 msgstr "无法更新稍后阅读状态。"
 
+msgid "Later: On"
+msgstr "稍后：开"
+
+msgid "Find"
+msgstr "查找"
+
+msgid "Find next"
+msgstr "查找下一个"
+
+msgid "Enter text to search for"
+msgstr "输入要查找的文本"
+
+msgid "No matches for '%1' were found."
+msgstr "没有找到“%1”的匹配项。"
+
+msgid "Source"
+msgstr "来源"
+
+msgid "Date"
+msgstr "日期"
+
 msgid "Invalid number."
 msgstr "数字无效。"
 

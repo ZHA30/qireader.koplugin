@@ -17,14 +17,13 @@ local InputContainer = require("ui/widget/container/inputcontainer")
 local LeftContainer = require("ui/widget/container/leftcontainer")
 local LineWidget = require("ui/widget/linewidget")
 local OverlapGroup = require("ui/widget/overlapgroup")
+local QiArticleDetailWidget = require("qireader.articledetail")
 local Screen = Device.screen
 local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
-local TextViewer = require("ui/widget/textviewer")
 local TextWidget = require("ui/widget/textwidget")
 local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
-local util = require("util")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 
@@ -954,11 +953,12 @@ function QiArticleListWidget:reloadFromRemote()
     self:loadPage(1)
 end
 
-function QiArticleListWidget.showText(_, title, text)
-    UIManager:show(TextViewer:new{
-        title = title,
-        text = util.htmlToPlainTextIfHtml(text or ""),
-        text_type = "book_info",
+function QiArticleListWidget:showArticleDetail(entry, html)
+    UIManager:show(QiArticleDetailWidget:new{
+        controller = self.controller,
+        entry = entry,
+        title = entry and entry.title or self.title or _("Untitled"),
+        html = html,
     })
 end
 

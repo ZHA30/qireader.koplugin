@@ -3,6 +3,8 @@
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../i18n/po.lua")
 
 local Blitbuffer = require("ffi/blitbuffer")
+local ArticleContent = require("qireader.articlecontent")
+local QiArticleDetailWidget = require("qireader.articledetail")
 local QiArticleListWidget = require("qireader.articlelist")
 local Button = require("ui/widget/button")
 local ButtonDialog = require("ui/widget/buttondialog")
@@ -16,7 +18,6 @@ local Settings = require("qireader.settings")
 local Size = require("ui/size")
 local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
-local util = require("util")
 local Screen = Device.screen
 
 local Controller = {}
@@ -848,6 +849,10 @@ function Controller:onArticleListClosed(widget)
     UIManager:close(widget)
 end
 
+function Controller.onArticleDetailClosed(_, widget)
+    UIManager:close(widget)
+end
+
 function Controller:refreshArticleWidget(widget)
     if self.article_widget and not widget then
         widget = self.article_widget
@@ -987,10 +992,13 @@ function Controller:openArticleContent(target, entry)
     end
     local content = response.json.result[1].content or entry.summary or ""
     if self.article_widget then
-        self.article_widget:showText(entry.title, content)
+        self.article_widget:showArticleDetail(entry, ArticleContent.format(entry, content))
     else
-        UIManager:show(InfoMessage:new{
-            text = util.htmlToPlainTextIfHtml(content),
+        UIManager:show(QiArticleDetailWidget:new{
+            controller = self,
+            entry = entry,
+            title = entry.title or _("Untitled"),
+            html = ArticleContent.format(entry, content),
         })
     end
 end
