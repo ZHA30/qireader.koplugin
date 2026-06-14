@@ -25,7 +25,6 @@ function Controller.new(args)
         },
         groups = nil,
         ungrouped = nil,
-        ungrouped_unread_count = 0,
         subscriptions = nil,
         expanded_groups = {},
         state = "closed",
@@ -34,6 +33,7 @@ function Controller.new(args)
         article_widget = nil,
         article_detail_widget = nil,
         readlater_tag_id = nil,
+        readlater_tag_callbacks = nil,
         pending_jobs = {},
         job_tokens = {},
     }, Controller)
@@ -48,8 +48,14 @@ function Controller:isJobTokenCurrent(key, token)
     return self.job_tokens[key] == token
 end
 
+function Controller:invalidateJobToken(key)
+    self.job_tokens[key] = (self.job_tokens[key] or 0) + 1
+end
+
 function Controller:invalidateAllJobTokens()
-    self.job_tokens = {}
+    for key in pairs(self.job_tokens) do
+        self:invalidateJobToken(key)
+    end
 end
 
 function Controller:createBackgroundRequest(request_spec)
@@ -73,16 +79,24 @@ function Controller:clearPendingJob(key, job)
     self.pending_jobs[key] = nil
 end
 
-function Controller:cancelPendingJob(key)
-    local job = self.pending_jobs[key]
-    if job and job.cancel then
-        job:cancel()
+function Controller:cancelPendingJob(key, job)
+    local pending_job = self.pending_jobs[key]
+    if job and pending_job ~= job then
+        if job.cancel then
+            job:cancel()
+        end
+        return
+    end
+    self:invalidateJobToken(key)
+    if pending_job and pending_job.cancel then
+        pending_job:cancel()
     end
     self.pending_jobs[key] = nil
 end
 
 function Controller:cancelAllPendingJobs()
     for key, job in pairs(self.pending_jobs) do
+        self:invalidateJobToken(key)
         if job and job.cancel then
             job:cancel()
         end

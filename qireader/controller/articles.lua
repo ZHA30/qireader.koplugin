@@ -6,6 +6,7 @@ local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 
 local methods = {}
+local PAGE_READ_MARK_JOB_PREFIX = "page_mark_read:"
 local READ_MARK_JOB_PREFIX = "article_mark_read:"
 local FULL_TEXT_API_URL = "https://nettools3.oxyry.com/text"
 local FULL_TEXT_JOB_PREFIX = "article_full_text:"
@@ -62,6 +63,14 @@ local function setFullTextState(widget, state, entry_id)
     if widget and not widget.closing and widget.setFullTextState then
         widget:setFullTextState(state, entry_id)
     end
+end
+
+local function buildEntryIdsJobKey(prefix, entry_ids)
+    local parts = {}
+    for i = 1, #entry_ids do
+        parts[i] = tostring(entry_ids[i])
+    end
+    return prefix .. table.concat(parts, ",")
 end
 
 function methods:syncReadLaterEntry(entry)
@@ -154,7 +163,7 @@ function methods:loadReadLaterTagId(callback)
         if self.state == "closed"
             or not self:isJobTokenCurrent("readlater_tag", token)
             or self.pending_jobs.readlater_tag ~= job then
-            self:cancelPendingJob("readlater_tag")
+            self:cancelPendingJob("readlater_tag", job)
             finish(nil, "cancelled")
             return
         end
@@ -201,7 +210,10 @@ function methods:onArticleListClosed(widget)
     if self.article_widget == widget then
         self.article_widget = nil
     end
-    if self.article_detail_widget then
+    if widget and widget.closeDetailWidget then
+        widget:closeDetailWidget()
+    elseif self.article_detail_widget then
+        self:cancelArticleFullText(self.article_detail_widget.entry)
         UIManager:close(self.article_detail_widget)
         self.article_detail_widget = nil
     end
@@ -244,10 +256,26 @@ function methods:markPageRead(page)
     if not job then
         return
     end
+    local job_key = buildEntryIdsJobKey(PAGE_READ_MARK_JOB_PREFIX, unread_ids)
+    local job_token = self:nextJobToken(job_key)
+    self:registerPendingJob(job_key, job)
     local function poll()
-        local done, response = job:poll()
+        if self.state == "closed"
+            or not self:isJobTokenCurrent(job_key, job_token)
+            or self.pending_jobs[job_key] ~= job then
+            self:cancelPendingJob(job_key, job)
+            return
+        end
+        local done, response, err = job:poll()
         if not done then
             UIManager:scheduleIn(0.1, poll)
+            return
+        end
+        self:clearPendingJob(job_key, job)
+        if err == "cancelled" then
+            return
+        end
+        if self.state == "closed" or not self:isJobTokenCurrent(job_key, job_token) then
             return
         end
         self:applyResponseSession(response)
@@ -328,7 +356,7 @@ function methods:markArticleRead(entry)
         if self.state == "closed"
             or not self:isJobTokenCurrent(job_key, job_token)
             or self.pending_jobs[job_key] ~= job then
-            self:cancelPendingJob(job_key)
+            self:cancelPendingJob(job_key, job)
             return
         end
         local done, response, err = job:poll()
@@ -387,7 +415,7 @@ function methods:toggleReadLater(entry, widget)
             if self.state == "closed"
                 or not self:isJobTokenCurrent(job_key, job_token)
                 or self.pending_jobs[job_key] ~= job then
-                self:cancelPendingJob(job_key)
+                self:cancelPendingJob(job_key, job)
                 return
             end
             local done, response, err = job:poll()
@@ -477,7 +505,7 @@ function methods:loadArticleFullText(entry, detail_widget)
             or not self:isJobTokenCurrent(job_key, job_token)
             or self.pending_jobs[job_key] ~= job
             or not isCurrentDetailWidget(self, entry, detail_widget) then
-            self:cancelPendingJob(job_key)
+            self:cancelPendingJob(job_key, job)
             return
         end
         local done, response, err = job:poll()
@@ -545,7 +573,7 @@ function methods:openArticleContent(target, entry, detail_widget)
         if self.state == "closed"
             or not self:isJobTokenCurrent("article_content", job_token)
             or self.pending_jobs.article_content ~= job then
-            self:cancelPendingJob("article_content")
+            self:cancelPendingJob("article_content", job)
             return
         end
         local done, response, err = job:poll()

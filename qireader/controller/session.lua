@@ -20,7 +20,6 @@ end
 local function resetSubscriptions(controller)
     controller.groups = {}
     controller.ungrouped = {}
-    controller.ungrouped_unread_count = 0
     controller.subscriptions = {}
 end
 
@@ -38,13 +37,14 @@ function methods:close()
     self.state = "closed"
     self:invalidateAllJobTokens()
     self:cancelAllPendingJobs()
-    if self.article_detail_widget then
-        UIManager:close(self.article_detail_widget)
-        self.article_detail_widget = nil
-    end
+    self.readlater_tag_callbacks = nil
     if self.article_widget then
         UIManager:close(self.article_widget)
         self.article_widget = nil
+    end
+    if self.article_detail_widget then
+        UIManager:close(self.article_detail_widget)
+        self.article_detail_widget = nil
     end
     if self.active_dialog then
         UIManager:close(self.active_dialog)
@@ -57,8 +57,7 @@ function methods:close()
     end
 end
 
-function methods:showTransientMessage(text)
-    self.last_message = text
+function methods.showTransientMessage(_self, text)
     UIManager:show(InfoMessage:new{
         text = text,
     })
@@ -255,7 +254,7 @@ function methods:startSubscriptionsLoad()
             if self.state == "closed"
                 or not self:isJobTokenCurrent("subscriptions", token)
                 or self.pending_jobs.unread_counts ~= unread_job then
-                self:cancelPendingJob("unread_counts")
+                self:cancelPendingJob("unread_counts", unread_job)
                 return
             end
             local done, unread_response = unread_job:poll()
@@ -276,7 +275,7 @@ function methods:startSubscriptionsLoad()
         if self.state == "closed"
             or not self:isJobTokenCurrent("subscriptions", token)
             or self.pending_jobs.subscriptions ~= subscriptions_job then
-            self:cancelPendingJob("subscriptions")
+            self:cancelPendingJob("subscriptions", subscriptions_job)
             return
         end
         local done, response = subscriptions_job:poll()

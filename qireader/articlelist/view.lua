@@ -331,6 +331,9 @@ function methods:closeDetailWidget()
         if self.controller and self.controller.article_detail_widget == detail_widget then
             self.controller.article_detail_widget = nil
         end
+        if self.controller and self.controller.cancelArticleFullText then
+            self.controller:cancelArticleFullText(detail_widget.entry)
+        end
         UIManager:close(detail_widget)
     end
 end
@@ -626,6 +629,7 @@ end
 
 function methods:onCloseWidget()
     self.closing = true
+    self:clearPendingFetch()
     self:closeActiveDialog()
     self:closeDetailWidget()
     if self.controller and self.controller.article_widget == self then
