@@ -21,7 +21,7 @@ local function getReadLaterFlag(entry, tag_id)
 end
 
 local function refreshDetailWidget(widget)
-    if widget and widget.refreshBottomButtons then
+    if widget and not widget.closing and widget.refreshBottomButtons then
         widget:refreshBottomButtons()
         UIManager:setDirty(widget, function()
             return "partial", widget.movable and widget.movable.dimen or widget.frame.dimen
@@ -363,7 +363,10 @@ function methods:openArticleContent(target, entry, detail_widget)
             return
         end
         local formatted, title = buildArticleContent(entry, response)
-        if detail_widget and detail_widget.updateArticleDetail then
+        if detail_widget
+            and detail_widget.updateArticleDetail
+            and not detail_widget.closing
+            and self.article_detail_widget == detail_widget then
             detail_widget:updateArticleDetail(entry, formatted, title)
             return
         end

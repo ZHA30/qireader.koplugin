@@ -26,6 +26,8 @@ end
 
 local function clearSession(controller)
     Settings.clearSession(controller.settings)
+    controller.readlater_tag_id = nil
+    controller.readlater_tag_callbacks = nil
     controller.save_settings()
     resetSubscriptions(controller)
 end

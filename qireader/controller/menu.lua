@@ -93,7 +93,6 @@ function methods:openArticles(row)
     if not row then
         return
     end
-    self:ensureReadLaterTagId()
     local target = self:buildArticleTarget(row)
     if not target then
         self:showTransientMessage(_("Cannot open article list."))
@@ -109,6 +108,7 @@ function methods:openArticles(row)
         target = target,
     }
     UIManager:show(self.article_widget)
+    self:loadReadLaterTagId()
 end
 
 function methods:isUnreadOnly()
