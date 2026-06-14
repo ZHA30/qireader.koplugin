@@ -1,19 +1,31 @@
+local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../i18n/po.lua")
+
 local util = require("util")
 
 local ArticleContent = {}
 local DEFAULT_PAGE_MARGIN_VERTICAL = 8
 local DEFAULT_PAGE_MARGIN_HORIZONTAL = 12
 
-local VOID_MEDIA_PATTERN = {
-    img = "图片",
-    image = "图片",
-    video = "视频",
-    audio = "音频",
-    iframe = "嵌入内容",
-    object = "嵌入内容",
-    embed = "嵌入内容",
-    svg = "图片",
-    figure = "图片",
+local MEDIA_TAGS = {
+    { tag = "figure", label = "Image", paired = true, void = false },
+    { tag = "picture", label = "Image", paired = true, void = false },
+    { tag = "video", label = "Video", paired = true, void = true },
+    { tag = "audio", label = "Audio", paired = true, void = true },
+    { tag = "iframe", label = "Embedded content", paired = true, void = true },
+    { tag = "object", label = "Embedded content", paired = true, void = true },
+    { tag = "embed", label = "Embedded content", paired = false, void = true },
+    { tag = "svg", label = "Image", paired = true, void = true },
+    { tag = "canvas", label = "Image", paired = true, void = true },
+    { tag = "image", label = "Image", paired = false, void = true },
+    { tag = "img", label = "Image", paired = false, void = true },
+}
+
+local MEDIA_PLACEHOLDER_LABEL_IDS = {
+    "Image",
+    "Video",
+    "Audio",
+    "Embedded content",
+    "Media",
 }
 
 local DROP_BLOCK_TAGS = {
@@ -26,9 +38,6 @@ local DROP_BLOCK_TAGS = {
     textarea = true,
     select = true,
     option = true,
-    source = true,
-    track = true,
-    canvas = true,
 }
 
 local TEXT_TAGS = {
@@ -90,10 +99,53 @@ local function escapeHtml(text)
     return util.htmlEscape(text or "")
 end
 
+local function escapePattern(text)
+    return (text:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1"))
+end
+
+local function asciiCasePattern(text)
+    return (text:gsub(".", function(char)
+        if char:match("%a") then
+            return "[" .. char:lower() .. char:upper() .. "]"
+        end
+        return escapePattern(char)
+    end))
+end
+
+local function decodeUrlText(text)
+    return (text:gsub("%%(%x%x)", function(hex)
+        return string.char(tonumber(hex, 16))
+    end))
+end
+
+local function getUrlLabel(value)
+    value = trim(util.htmlEntitiesToUtf8(value or ""))
+    if value == "" then
+        return nil
+    end
+    value = value:match("^([^,%s]+)") or value
+    if value:lower():match("^data:") then
+        return nil
+    end
+    value = value:gsub("[#?].*$", "")
+    value = value:gsub("/+$", "")
+    local label = value:match("([^/]+)$") or value
+    label = trim(decodeUrlText(label))
+    if label == "" or label == "." or label == ".." then
+        return nil
+    end
+    return label
+end
+
 local function isMeaningfulPlaceholderText(text)
     text = trim(text)
     if text == "" then
         return false
+    end
+    for i = 1, #MEDIA_PLACEHOLDER_LABEL_IDS do
+        if text == _(MEDIA_PLACEHOLDER_LABEL_IDS[i]) then
+            return false
+        end
     end
     -- Ignore broken alt/title payloads that collapse to punctuation only.
     if text:match('^[%s"\'`´“”‘’.,:;!%?%-%[%]%(%){}_/\\|<>~@#$%^&*+=]+$') then
@@ -102,41 +154,153 @@ local function isMeaningfulPlaceholderText(text)
     return true
 end
 
+local function stripLooseMediaClosingBracket(text)
+    while true do
+        local before, after = text:match("^([^%[%]]+)%]%s*(.*)$")
+        if not before then
+            return text
+        end
+        text = trim(before .. " " .. after)
+    end
+end
+
+local function stripLeadingMediaLabel(text)
+    text = trim(text)
+    local changed = true
+    while changed do
+        changed = false
+        for i = 1, #MEDIA_PLACEHOLDER_LABEL_IDS do
+            local label = escapePattern(_(MEDIA_PLACEHOLDER_LABEL_IDS[i]))
+            local rest = text:match("^%[" .. label .. "%]%s*(.*)$")
+            if rest then
+                text = stripLooseMediaClosingBracket(trim(rest))
+                changed = true
+                break
+            end
+            rest = text:match("^%[" .. label .. "%s*:%s*(.*)$")
+                or text:match("^%[" .. label .. "%s*" .. escapePattern(_(":")) .. "%s*(.*)$")
+            if rest then
+                text = stripLooseMediaClosingBracket(trim(rest))
+                if text:sub(1, 1) == "[" and text:sub(-1) == "]" then
+                    text = trim(text:sub(1, -2))
+                end
+                changed = true
+                break
+            end
+        end
+    end
+    return stripLooseMediaClosingBracket(text)
+end
+
 local function getAttr(attrs, name)
     if not attrs or not name then
         return nil
     end
-    local pattern = name .. [[%s*=%s*(['"])(.-)%1]]
-    local value = attrs:match(pattern)
+    local attr_name = asciiCasePattern(name)
+    local value = attrs:match(attr_name .. [[%s*=%s*"(.-)"]])
+        or attrs:match(attr_name .. [[%s*=%s*'(.-)']])
     if value then
         return value
     end
-    pattern = name .. [[%s*=%s*([^%s>]+)]]
-    value = attrs:match(pattern)
+    value = attrs:match(attr_name .. [[%s*=%s*([^%s>]+)]])
     if value then
         return value
     end
     return nil
 end
 
-local function buildMediaPlaceholder(tag, attrs, body)
-    local kind = VOID_MEDIA_PATTERN[tag] or "媒体"
-    local candidates = {
-        getAttr(attrs, "alt"),
-        getAttr(attrs, "title"),
-        getAttr(attrs, "aria-label"),
-        body,
+local function addCandidate(candidates, value)
+    if value and value ~= "" then
+        candidates[#candidates + 1] = value
+    end
+end
+
+local function addTextCandidates(candidates, attrs)
+    if not attrs then
+        return
+    end
+    addCandidate(candidates, getAttr(attrs, "alt"))
+    addCandidate(candidates, getAttr(attrs, "title"))
+    addCandidate(candidates, getAttr(attrs, "aria-label"))
+end
+
+local function addUrlCandidates(candidates, attrs)
+    if not attrs then
+        return
+    end
+    local url_attrs = {
+        "poster",
+        "src",
+        "srcset",
+        "data-src",
+        "data-original",
+        "data-url",
+        "data-lazy-src",
+        "data-original-src",
+        "href",
+        "data",
     }
+    for i = 1, #url_attrs do
+        local label = getUrlLabel(getAttr(attrs, url_attrs[i]))
+        if label then
+            addCandidate(candidates, label)
+        end
+    end
+end
+
+local function addBodyCandidates(candidates, body)
+    if not body then
+        return
+    end
+    local pieces = {}
+    local function addPiece(value)
+        value = stripLeadingMediaLabel(stripTags(value))
+        if isMeaningfulPlaceholderText(value) then
+            pieces[#pieces + 1] = value
+        end
+    end
+
+    for nested_attrs in body:gmatch("<[%w:_-]+([^>]*)>") do
+        addPiece(getAttr(nested_attrs, "alt"))
+        addPiece(getAttr(nested_attrs, "title"))
+        addPiece(getAttr(nested_attrs, "aria-label"))
+    end
+
+    addPiece(body)
+
+    if #pieces > 0 then
+        addCandidate(candidates, table.concat(pieces, " "))
+    end
+end
+
+local function addNestedUrlCandidates(candidates, body)
+    if not body then
+        return
+    end
+    for nested_attrs in body:gmatch("<[%w:_-]+([^>]*)>") do
+        addUrlCandidates(candidates, nested_attrs)
+    end
+end
+
+local function buildMediaPlaceholder(label_id, attrs, body)
+    local kind = _(label_id or "Media")
+    local candidates = {}
+    addTextCandidates(candidates, attrs)
+    addBodyCandidates(candidates, body)
+    addUrlCandidates(candidates, attrs)
+    addNestedUrlCandidates(candidates, body)
+
     local text
     for i = 1, #candidates do
-        local candidate = stripTags(candidates[i])
+        local candidate = stripLeadingMediaLabel(stripTags(candidates[i]))
         if isMeaningfulPlaceholderText(candidate) then
             text = candidate
             break
         end
     end
     if text and text ~= "" then
-        return string.format('<p class="media-placeholder">[%s：%s]</p>', kind, escapeHtml(text))
+        local placeholder_text = string.format(_("[%s: %s]"), kind, escapeHtml(text))
+        return string.format('<p class="media-placeholder">%s</p>', placeholder_text)
     end
     return string.format('<p class="media-placeholder">[%s]</p>', kind)
 end
@@ -150,16 +314,17 @@ local function dropBlocks(html)
 end
 
 local function replaceMedia(html)
-    html = html:gsub("<img([^>]*)/?>", function(attrs)
-        return buildMediaPlaceholder("img", attrs, nil)
-    end)
-    for tag in pairs(VOID_MEDIA_PATTERN) do
-        if tag ~= "img" then
+    for i = 1, #MEDIA_TAGS do
+        local spec = MEDIA_TAGS[i]
+        local tag = asciiCasePattern(spec.tag)
+        if spec.paired then
             html = html:gsub("<" .. tag .. "([^>]*)>(.-)</" .. tag .. "%s*>", function(attrs, body)
-                return buildMediaPlaceholder(tag, attrs, body)
+                return buildMediaPlaceholder(spec.label, attrs, body)
             end)
+        end
+        if spec.void then
             html = html:gsub("<" .. tag .. "([^>]*)/?>", function(attrs)
-                return buildMediaPlaceholder(tag, attrs, nil)
+                return buildMediaPlaceholder(spec.label, attrs, nil)
             end)
         end
     end
@@ -264,11 +429,6 @@ function ArticleContent.format(_entry, content)
         fallback = fallback:gsub("\n", "<br/>")
         sanitized = "<p>" .. fallback .. "</p>"
     end
-    -- Avoid nesting placeholders like "[图片：[图片]]" when alt/title text is itself a placeholder.
-    sanitized = sanitized:gsub("(%[图片：)%s*%[图片%]%s*(%])", "[图片]")
-    sanitized = sanitized:gsub("(%[视频：)%s*%[视频%]%s*(%])", "[视频]")
-    sanitized = sanitized:gsub("(%[音频：)%s*%[音频%]%s*(%])", "[音频]")
-    sanitized = sanitized:gsub("(%[嵌入内容：)%s*%[嵌入内容%]%s*(%])", "[嵌入内容]")
     return sanitized
 end
 

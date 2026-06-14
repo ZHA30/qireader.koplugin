@@ -145,6 +145,27 @@ msgstr "配置：全局"
 msgid "Cannot load article content."
 msgstr "无法加载文章内容。"
 
+msgid "Image"
+msgstr "图片"
+
+msgid "Video"
+msgstr "视频"
+
+msgid "Audio"
+msgstr "音频"
+
+msgid "Embedded content"
+msgstr "嵌入内容"
+
+msgid "Media"
+msgstr "媒体"
+
+msgid ":"
+msgstr "："
+
+msgid "[%s: %s]"
+msgstr "[%s：%s]"
+
 msgid "Cannot open article list."
 msgstr "无法打开文章列表。"
 
