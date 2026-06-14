@@ -4,6 +4,7 @@ local Blitbuffer = require("ffi/blitbuffer")
 local BD = require("ui/bidi")
 local ButtonDialog = require("ui/widget/buttondialog")
 local FontChooser = require("ui/widget/fontchooser")
+local InfoMessage = require("ui/widget/infomessage")
 local Notification = require("ui/widget/notification")
 local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
@@ -11,6 +12,27 @@ local T = require("ffi/util").template
 local Device = require("device")
 
 local methods = {}
+
+local function isTapInsideWidget(widget, ges_ev)
+    return widget
+        and widget.dimen
+        and ges_ev
+        and ges_ev.pos
+        and ges_ev.pos:intersectWith(widget.dimen)
+end
+
+local function isTapInsideTitleBarButtonArea(titlebar, ges_ev)
+    if not titlebar or not titlebar.dimen or not ges_ev or not ges_ev.pos then
+        return false
+    end
+    if isTapInsideWidget(titlebar.left_button, ges_ev)
+        or isTapInsideWidget(titlebar.right_button, ges_ev) then
+        return true
+    end
+    local button_zone = math.min(titlebar.dimen.w / 3, titlebar.dimen.h * 3)
+    local relative_x = ges_ev.pos.x - titlebar.dimen.x
+    return relative_x <= button_zone or relative_x >= titlebar.dimen.w - button_zone
+end
 
 function methods:getFullTextButtonText()
     if self:isFullTextLoading() then
@@ -130,6 +152,37 @@ function methods:closeActiveDialog()
         UIManager:close(self.active_dialog)
         self.active_dialog = nil
     end
+end
+
+function methods:showFullTitle()
+    local title = self.title or (self.entry and self.entry.title) or _("Untitled")
+    if title == "" then
+        title = _("Untitled")
+    end
+    self:closeActiveDialog()
+    local dialog
+    dialog = InfoMessage:new{
+        text = title,
+        show_icon = false,
+        dismiss_callback = function()
+            if self.active_dialog == dialog then
+                self.active_dialog = nil
+            end
+        end,
+    }
+    self.active_dialog = dialog
+    UIManager:show(dialog)
+end
+
+function methods:tapTitleBar(ges_ev)
+    if not isTapInsideWidget(self.titlebar, ges_ev) then
+        return false
+    end
+    if isTapInsideTitleBarButtonArea(self.titlebar, ges_ev) then
+        return false
+    end
+    self:showFullTitle()
+    return true
 end
 
 function methods:toggleReadLater()
@@ -291,6 +344,9 @@ function methods:onShowMenu()
 end
 
 function methods:onTapClose(_arg, ges_ev)
+    if self:tapTitleBar(ges_ev) then
+        return true
+    end
     if self.movable and self.movable.dimen and ges_ev.pos:notIntersectWith(self.movable.dimen) then
         self:onClose()
         return true

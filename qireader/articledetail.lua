@@ -113,7 +113,7 @@ function QiArticleDetailWidget:init()
         align = "left",
         with_bottom_line = true,
         title = self.title,
-        title_multilines = true,
+        title_multilines = false,
         left_icon = "appbar.menu",
         left_icon_tap_callback = function()
             self:showMenuDialog()
