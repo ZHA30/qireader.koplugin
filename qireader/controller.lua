@@ -1,5 +1,5 @@
-local BackgroundRequest = require("qireader.background_request")
-local article_settings_methods = require("qireader.controller.article_settings")
+local Background = require("qireader.background")
+local settings_methods = require("qireader.controller.settings")
 local article_methods = require("qireader.controller.articles")
 local menu_methods = require("qireader.controller.menu")
 local session_methods = require("qireader.controller.session")
@@ -53,7 +53,7 @@ function Controller:invalidateAllJobTokens()
 end
 
 function Controller:createBackgroundRequest(request_spec)
-    return BackgroundRequest.new({
+    return Background.new({
         api_base = self.settings.api_base,
         cookie = self.settings.cookie,
     }, request_spec)
@@ -96,7 +96,7 @@ function Controller:applyResponseSession(response)
     end
 end
 
-installMethods(Controller, article_settings_methods)
+installMethods(Controller, settings_methods)
 installMethods(Controller, article_methods)
 installMethods(Controller, menu_methods)
 installMethods(Controller, session_methods)

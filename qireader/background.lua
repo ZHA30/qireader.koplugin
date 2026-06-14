@@ -2,8 +2,8 @@ local buffer = require("string.buffer")
 local ffiutil = require("ffi/util")
 local UIManager = require("ui/uimanager")
 
-local BackgroundRequest = {}
-BackgroundRequest.__index = BackgroundRequest
+local Background = {}
+Background.__index = Background
 
 local function newJob(client_settings, request_spec)
     local pid, read_fd = ffiutil.runInSubProcess(function(_pid, write_fd)
@@ -47,51 +47,58 @@ local function newJob(client_settings, request_spec)
         read_fd = read_fd,
         cancelled = false,
         collected = false,
-    }, BackgroundRequest)
+        collect_scheduled = false,
+    }, Background)
 end
 
-function BackgroundRequest.new(client_settings, request_spec)
+function Background.new(client_settings, request_spec)
     return newJob(client_settings, request_spec)
 end
 
-function BackgroundRequest:cancel()
+function Background:cancel()
     if self.cancelled or self.collected or not self.pid then
         return
     end
     self.cancelled = true
     ffiutil.terminateSubProcess(self.pid)
+    self:collectLater()
 end
 
-function BackgroundRequest:_closeReadFD()
+function Background:_closeReadFD()
     if self.read_fd then
         ffiutil.readAllFromFD(self.read_fd)
         self.read_fd = nil
     end
 end
 
-function BackgroundRequest:collectLater(delay)
-    if not self.pid then
+function Background:collectLater(delay)
+    if self.collect_scheduled or not self.pid then
         return
     end
     delay = delay or 1
-    local pid = self.pid
-    local read_fd = self.read_fd
-    UIManager:scheduleIn(delay, function()
-        if ffiutil.isSubProcessDone(pid) then
-            if read_fd then
-                ffiutil.readAllFromFD(read_fd)
-            end
-        else
-            UIManager:scheduleIn(delay, function()
-                if ffiutil.isSubProcessDone(pid) and read_fd then
-                    ffiutil.readAllFromFD(read_fd)
-                end
-            end)
+    self.collect_scheduled = true
+    local function collect()
+        if not self.pid then
+            self.collect_scheduled = false
+            return
         end
-    end)
+        if ffiutil.isSubProcessDone(self.pid) then
+            self:_closeReadFD()
+            self.pid = nil
+            self.collected = true
+            self.collect_scheduled = false
+            return
+        end
+        if self.read_fd and ffiutil.getNonBlockingReadSize(self.read_fd) ~= 0 then
+            ffiutil.readAllFromFD(self.read_fd)
+            self.read_fd = nil
+        end
+        UIManager:scheduleIn(delay, collect)
+    end
+    UIManager:scheduleIn(delay, collect)
 end
 
-function BackgroundRequest:poll()
+function Background:poll()
     if self.collected or not self.pid then
         return true, nil, "closed"
     end
@@ -134,4 +141,4 @@ function BackgroundRequest:poll()
     return true, response
 end
 
-return BackgroundRequest
+return Background
