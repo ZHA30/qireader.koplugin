@@ -7,7 +7,6 @@ local QiArticleListWidget = require("qireader.articlelist")
 local Button = require("ui/widget/button")
 local ButtonDialog = require("ui/widget/buttondialog")
 local Client = require("qireader.client")
-local ConfirmBox = require("ui/widget/confirmbox")
 local Device = require("device")
 local InfoMessage = require("ui/widget/infomessage")
 local Menu = require("ui/widget/menu")
@@ -354,6 +353,7 @@ end
 
 function Controller:showLoginDialog()
     self:closeLoginDialog()
+    local is_logged_in = self.settings.cookie ~= nil
     local dialog
     dialog = MultiInputDialog:new{
         title = _("QiReader account"),
@@ -381,7 +381,28 @@ function Controller:showLoginDialog()
                     end,
                 },
                 {
+                    text = _("Log out"),
+                    enabled = is_logged_in,
+                    callback = function()
+                        local fields = dialog:getFields()
+                        self.login_fields.email = fields[1] or ""
+                        UIManager:close(dialog)
+                        if self.login_dialog == dialog then
+                            self.login_dialog = nil
+                        end
+                        Settings.clearSession(self.settings)
+                        self.groups = {}
+                        self.ungrouped = {}
+                        self.ungrouped_unread_count = 0
+                        self.subscriptions = {}
+                        self.login_fields.password = ""
+                        self.save_settings()
+                        self:showGroupsPage()
+                    end,
+                },
+                {
                     text = _("Log in"),
+                    enabled = not is_logged_in,
                     callback = function()
                         local fields = dialog:getFields()
                         self.login_fields.email = fields[1] or ""
@@ -665,11 +686,7 @@ function Controller:showSettingsDialog()
 end
 
 function Controller:showAccountDialog()
-    if self.settings.cookie then
-        self:confirmLogout()
-    else
-        self:showLoginDialog()
-    end
+    self:showLoginDialog()
 end
 
 function Controller:ensureReadLaterTagId()
@@ -978,38 +995,6 @@ function Controller:openArticleContent(target, entry)
     end
 end
 
-function Controller:confirmLogout()
-    self:closeActiveDialog()
-    local dialog
-    dialog = ConfirmBox:new{
-        text = _("Log out of QiReader?"),
-        ok_text = _("Log out"),
-        ok_callback = function()
-            if self.active_dialog == dialog then
-                self.active_dialog = nil
-            end
-            Settings.clearSession(self.settings)
-            self.groups = {}
-            self.ungrouped = {}
-            self.ungrouped_unread_count = 0
-            self.subscriptions = {}
-            self.login_fields.password = ""
-            self.save_settings()
-            self:showGroupsPage()
-            UIManager:show(InfoMessage:new{
-                text = _("Logged out"),
-            })
-        end,
-        cancel_callback = function()
-            if self.active_dialog == dialog then
-                self.active_dialog = nil
-            end
-        end,
-    }
-    self.active_dialog = dialog
-    UIManager:show(dialog)
-end
-
 function Controller:refreshGroupsPage()
     if self.menu then
         self.menu:switchItemTable(_("Subscriptions"), self:buildGroupsPageItems(), -1, true, "")
@@ -1099,11 +1084,9 @@ function Controller:buildGroupsPageItems()
             })
         end
     end
-    if #items == 0 then
+    if #items == 0 and self.settings.cookie then
         table.insert(items, {
-            text = self.settings.cookie
-                and (self:isUnreadOnly() and _("No unread subscriptions.") or _("No subscriptions."))
-                or _("Not logged in"),
+            text = self:isUnreadOnly() and _("No unread subscriptions.") or _("No subscriptions."),
             select_enabled = false,
         })
     end
@@ -1116,7 +1099,7 @@ function Controller:showGroupsPage()
     local perpage = self.menu and self.menu.perpage
         or G_reader_settings:readSetting("items_per_page")
         or Menu.items_per_page_default
-    local state_w = math.max(Screen:scaleBySize(36), Menu.getItemFontSize(perpage) * 2)
+    local state_w = math.max(Screen:scaleBySize(48), Menu.getItemFontSize(perpage) * 2 + Screen:scaleBySize(8))
     self:showMenu(_("Subscriptions"), items, "", {
         state_w = state_w,
         single_line = true,

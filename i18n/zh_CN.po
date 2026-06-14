@@ -62,7 +62,7 @@ msgid "Log out of QiReader?"
 msgstr "要退出 QiReader 登录吗？"
 
 msgid "Log out"
-msgstr "退出登录"
+msgstr "登出"
 
 msgid "Logged out"
 msgstr "已退出登录"
