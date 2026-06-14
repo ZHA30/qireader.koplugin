@@ -8,6 +8,16 @@ local socketutil = require("socketutil")
 local Client = {}
 Client.__index = Client
 
+local function addCookieValue(values, value)
+    if type(value) ~= "string" then
+        return
+    end
+    local cookie = value:match("^[^;]+")
+    if cookie and cookie ~= "" then
+        values[#values + 1] = cookie
+    end
+end
+
 local function joinCookie(headers)
     if not headers then return nil end
     local values = {}
@@ -15,11 +25,10 @@ local function joinCookie(headers)
         if type(key) == "string" and key:lower() == "set-cookie" then
             if type(value) == "table" then
                 for i = 1, #value do
-                    local cookie = value[i]
-                    table.insert(values, cookie:match("^[^;]+"))
+                    addCookieValue(values, value[i])
                 end
             elseif type(value) == "string" then
-                table.insert(values, value:match("^[^;]+"))
+                addCookieValue(values, value)
             end
         end
     end
@@ -109,8 +118,19 @@ function Client:request(method, path, options)
     end
 
     socketutil:set_timeout(socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
-    local code, response_headers, status = socket.skip(1, https.request(request))
+    local ok, request_result, code, response_headers, status = pcall(https.request, request)
     socketutil:reset_timeout()
+    if not ok then
+        return {
+            code = 0,
+            status = tostring(request_result),
+            headers = nil,
+            body = "",
+            json = nil,
+            cookie = nil,
+        }
+    end
+    code, response_headers, status = socket.skip(1, request_result, code, response_headers, status)
 
     local response_body = table.concat(sink)
     local json = decodeJson(response_body)
@@ -134,86 +154,6 @@ function Client:login(email, password)
         body = {
             email = email,
             password = password,
-        },
-    })
-end
-
-function Client:getCurrentUser()
-    return self:request("GET", "/session/user")
-end
-
-function Client:getSubscriptions()
-    return self:request("GET", "/subscriptions")
-end
-
-function Client:getUnreadCounts()
-    return self:request("GET", "/markers/unread/counts")
-end
-
-function Client:getTags()
-    return self:request("GET", "/tags")
-end
-
-function Client:getStream(stream_id, query)
-    return self:request("GET", "/streams/" .. tostring(stream_id), {
-        query = query,
-    })
-end
-
-function Client:getEntry(entry_id, stream_id)
-    return self:request("GET", "/entry/" .. tostring(entry_id), {
-        query = {
-            streamId = stream_id,
-        },
-    })
-end
-
-function Client:getEntryContents(stream_id, entry_ids)
-    return self:request("GET", "/entry-contents", {
-        query = {
-            streamId = stream_id,
-            entryIds = entry_ids,
-        },
-    })
-end
-
-function Client:markEntriesRead(entry_ids)
-    return self:request("PUT", "/markers/reads", {
-        body = {
-            type = "entries",
-            entryIds = entry_ids,
-        },
-    })
-end
-
-function Client:markEntryUnread(entry_id)
-    return self:request("PUT", "/markers/unread", {
-        body = {
-            entryId = entry_id,
-        },
-    })
-end
-
-function Client:addEntryTag(entry_id, tag_id, entry_type)
-    return self:request("PUT", "/entries/" .. tostring(entry_id) .. "/tags/" .. tostring(tag_id), {
-        body = {
-            entryType = entry_type or "feed",
-            entryId = entry_id,
-            tagId = tag_id,
-        },
-    })
-end
-
-function Client:removeEntryTag(entry_id, tag_id, entry_type)
-    entry_type = entry_type or "feed"
-    local path = "/entries/" .. tostring(entry_type)
-        .. "/" .. tostring(entry_id)
-        .. "/tags/" .. tostring(tag_id)
-    return self:request("DELETE", path, {
-        body = {
-            entryType = entry_type,
-            entryId = entry_id,
-            tagId = tag_id,
         },
     })
 end
