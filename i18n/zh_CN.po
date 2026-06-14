@@ -72,3 +72,63 @@ msgstr "没有未读订阅。"
 
 msgid "No subscriptions."
 msgstr "没有订阅。"
+
+msgid "QiReader"
+msgstr "QiReader"
+
+msgid "Cannot load articles."
+msgstr "无法加载文章。"
+
+msgid "Items per page"
+msgstr "每页列表项"
+
+msgid "Items per page: %d"
+msgstr "每页列表项：%d"
+
+msgid "Later"
+msgstr "稍后"
+
+msgid "Loading..."
+msgstr "加载中..."
+
+msgid "Mark on page turn: Off"
+msgstr "翻页标记为已读：关"
+
+msgid "Mark on page turn: On"
+msgstr "翻页标记为已读：开"
+
+msgid "No articles."
+msgstr "没有文章。"
+
+msgid "Oldest first: Off"
+msgstr "从旧到新排序：关"
+
+msgid "Oldest first: On"
+msgstr "从旧到新排序：开"
+
+msgid "Page %d of %d"
+msgstr "第 %d / %d 页"
+
+msgid "Title font size"
+msgstr "列表项字号"
+
+msgid "Title font size: %d"
+msgstr "列表项字号：%d"
+
+msgid "Cannot load article content."
+msgstr "无法加载文章内容。"
+
+msgid "Cannot open article list."
+msgstr "无法打开文章列表。"
+
+msgid "Cannot resolve read-later tag."
+msgstr "无法解析稍后阅读标签。"
+
+msgid "Cannot update read-later state."
+msgstr "无法更新稍后阅读状态。"
+
+msgid "Invalid number."
+msgstr "数字无效。"
+
+msgid "Loading"
+msgstr "加载中"
