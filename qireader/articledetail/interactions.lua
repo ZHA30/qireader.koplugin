@@ -44,7 +44,7 @@ function methods:toggleReadLater()
     if not self.controller or not self.entry then
         return
     end
-    self.controller:toggleReadLater(self.entry)
+    self.controller:toggleReadLater(self.entry, self)
     self:refreshBottomButtons()
     UIManager:setDirty(self, function()
         return "partial", self.movable and self.movable.dimen or self.frame.dimen
@@ -269,7 +269,13 @@ end
 
 function methods:onCloseWidget()
     self.closing = true
-    self.active_dialog = nil
+    self:closeActiveDialog()
+    if self.owner_widget and self.owner_widget.detail_widget == self then
+        self.owner_widget.detail_widget = nil
+    end
+    if self.controller and self.controller.article_detail_widget == self then
+        self.controller.article_detail_widget = nil
+    end
     UIManager:setDirty(nil, function()
         return "partial", self.movable and self.movable.dimen or self.frame.dimen
     end)

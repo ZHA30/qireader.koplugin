@@ -103,6 +103,7 @@ function Client:request(method, path, options)
         headers = response_headers,
         body = response_body,
         json = json,
+        cookie = cookie,
     }
 end
 

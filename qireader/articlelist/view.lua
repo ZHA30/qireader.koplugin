@@ -310,13 +310,39 @@ function methods:onClose()
     end
 end
 
+function methods:closeActiveDialog()
+    if self.active_dialog then
+        local dialog = self.active_dialog
+        self.active_dialog = nil
+        UIManager:close(dialog)
+    end
+end
+
+function methods:closeDetailWidget()
+    if self.detail_widget then
+        local detail_widget = self.detail_widget
+        self.detail_widget = nil
+        if self.controller and self.controller.article_detail_widget == detail_widget then
+            self.controller.article_detail_widget = nil
+        end
+        UIManager:close(detail_widget)
+    end
+end
+
 function methods:showMenuDialog()
+    self:closeActiveDialog()
     local dialog
+    local function closeDialog()
+        if self.active_dialog == dialog then
+            self.active_dialog = nil
+        end
+        UIManager:close(dialog)
+    end
     local buttons = {
         {{
             text = self.controller:getArticleSettingsScopeText(self.target),
             callback = function()
-                UIManager:close(dialog)
+                closeDialog()
                 self.controller:toggleArticleSettingsScope(self.target, self)
             end,
             align = "left",
@@ -326,7 +352,7 @@ function methods:showMenuDialog()
                 and _("Unread only: On")
                 or _("Unread only: Off"),
             callback = function()
-                UIManager:close(dialog)
+                closeDialog()
                 self.controller:toggleArticleUnreadOnly(self.target, self)
             end,
             align = "left",
@@ -336,7 +362,7 @@ function methods:showMenuDialog()
                 and _("Oldest first: On")
                 or _("Oldest first: Off"),
             callback = function()
-                UIManager:close(dialog)
+                closeDialog()
                 self.controller:toggleArticleOrder(self.target, self)
             end,
             align = "left",
@@ -346,7 +372,7 @@ function methods:showMenuDialog()
                 and _("Mark on page turn: On")
                 or _("Mark on page turn: Off"),
             callback = function()
-                UIManager:close(dialog)
+                closeDialog()
                 self.controller:toggleMarkReadOnPageTurn(self.target, self)
             end,
             align = "left",
@@ -354,7 +380,7 @@ function methods:showMenuDialog()
         {{
             text = string.format(_("Items per page: %d"), self:getPerPage()),
             callback = function()
-                UIManager:close(dialog)
+                closeDialog()
                 self.controller:showArticleNumberPicker(
                     self.target,
                     self,
@@ -376,7 +402,7 @@ function methods:showMenuDialog()
     table.insert(buttons, {{
         text = string.format(_("Title font size: %d"), self:getTitleFontSize()),
         callback = function()
-            UIManager:close(dialog)
+            closeDialog()
             self.controller:showArticleNumberPicker(
                 self.target,
                 self,
@@ -400,13 +426,21 @@ function methods:showMenuDialog()
         anchor = function()
             return self.title_bar and self.title_bar.left_button and self.title_bar.left_button.image.dimen or nil
         end,
+        tap_close_callback = function()
+            if self.active_dialog == dialog then
+                self.active_dialog = nil
+            end
+        end,
     }
+    self.active_dialog = dialog
     UIManager:show(dialog)
 end
 
 function methods:showArticleDetail(entry, html)
+    self:closeDetailWidget()
     local detail_widget = QiArticleDetailWidget:new{
         controller = self.controller,
+        owner_widget = self,
         entry = entry,
         title = entry and entry.title or self.title or _("Untitled"),
         html = html,
@@ -417,6 +451,12 @@ function methods:showArticleDetail(entry, html)
             self:showAdjacentArticleDetail(current_entry, 1, widget)
         end,
         on_close_article = function(widget)
+            if self.detail_widget == widget then
+                self.detail_widget = nil
+            end
+            if self.controller and self.controller.article_detail_widget == widget then
+                self.controller.article_detail_widget = nil
+            end
             self.controller:onArticleDetailClosed(widget)
         end,
         has_prev_article = function(current_entry)
@@ -426,6 +466,10 @@ function methods:showArticleDetail(entry, html)
             return self:canShowAdjacentArticle(current_entry, 1)
         end,
     }
+    self.detail_widget = detail_widget
+    if self.controller then
+        self.controller.article_detail_widget = detail_widget
+    end
     UIManager:show(detail_widget)
 end
 
@@ -469,6 +513,11 @@ end
 
 function methods:onCloseWidget()
     self.closing = true
+    self:closeActiveDialog()
+    self:closeDetailWidget()
+    if self.controller and self.controller.article_widget == self then
+        self.controller.article_widget = nil
+    end
 end
 
 return methods

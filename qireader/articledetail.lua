@@ -36,6 +36,7 @@ local QiArticleDetailWidget = InputContainer:extend{
     on_close_article = nil,
     has_prev_article = nil,
     has_next_article = nil,
+    owner_widget = nil,
 }
 
 function QiArticleDetailWidget:init()

@@ -194,7 +194,8 @@ end
 function methods:showArticleNumberPicker(target, widget, setting_key, title, options)
     options = options or {}
     local current_value = self:getArticleSetting(target, setting_key) or options.default_value
-    local spin_widget = SpinWidget:new{
+    local spin_widget
+    spin_widget = SpinWidget:new{
         title_text = title,
         value = current_value,
         value_min = options.value_min,
@@ -207,7 +208,16 @@ function methods:showArticleNumberPicker(target, widget, setting_key, title, opt
                 options.on_apply(widget)
             end
         end,
+        close_callback = function()
+            if widget and widget.active_dialog == spin_widget then
+                widget.active_dialog = nil
+            end
+        end,
     }
+    if widget then
+        widget:closeActiveDialog()
+        widget.active_dialog = spin_widget
+    end
     UIManager:show(spin_widget)
 end
 

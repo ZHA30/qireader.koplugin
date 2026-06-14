@@ -10,31 +10,48 @@ local QiReader = WidgetContainer:extend{
     settings_key = "qireader",
 }
 
+function QiReader:isFileManagerContext()
+    return self.ui and self.ui.document == nil
+end
+
+function QiReader:ensureController()
+    if not self.settings then
+        self.settings = Settings.load()
+    end
+    if not self.controller then
+        self.controller = Controller.new{
+            plugin = self,
+            settings = self.settings,
+            save_settings = function()
+                self:saveSettings()
+            end,
+        }
+    end
+    return self.controller
+end
+
 function QiReader:init()
-    self.settings = Settings.load()
-    self.controller = Controller.new{
-        plugin = self,
-        settings = self.settings,
-        save_settings = function()
-            self:saveSettings()
-        end,
-    }
+    if not self:isFileManagerContext() then
+        return
+    end
     self.ui.menu:registerToMainMenu(self)
 end
 
 function QiReader:saveSettings()
-    Settings.save(self.settings)
+    if self.settings then
+        Settings.save(self.settings)
+    end
 end
 
 function QiReader:addToMainMenu(menu_items)
-    if self.ui.view then
+    if not self:isFileManagerContext() then
         return
     end
     menu_items.qireader_open = {
         text = _("QiReader"),
         sorting_hint = "search",
         callback = function()
-            self.controller:open()
+            self:ensureController():open()
         end,
     }
 end

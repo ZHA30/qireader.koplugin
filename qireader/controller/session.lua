@@ -4,6 +4,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local MultiInputDialog = require("ui/widget/multiinputdialog")
 local NetworkMgr = require("ui/network/manager")
 local Settings = require("qireader.settings")
+local Trapper = require("ui/trapper")
 local UIManager = require("ui/uimanager")
 
 local function responseError(response)
@@ -33,6 +34,12 @@ local methods = {}
 
 function methods:close()
     self.state = "closed"
+    self:invalidateAllJobTokens()
+    self:cancelAllPendingJobs()
+    if self.article_detail_widget then
+        UIManager:close(self.article_detail_widget)
+        self.article_detail_widget = nil
+    end
     if self.article_widget then
         UIManager:close(self.article_widget)
         self.article_widget = nil
@@ -56,7 +63,13 @@ function methods:showTransientMessage(text)
 end
 
 function methods:handleUnauthorized()
+    self:invalidateAllJobTokens()
+    self:cancelAllPendingJobs()
     clearSession(self)
+    if self.article_detail_widget then
+        UIManager:close(self.article_detail_widget)
+        self.article_detail_widget = nil
+    end
     if self.article_widget then
         UIManager:close(self.article_widget)
         self.article_widget = nil
@@ -159,27 +172,135 @@ function methods:showLoginDialog()
 end
 
 function methods:login(email, password)
+    if NetworkMgr:willRerunWhenOnline(function() self:login(email, password) end) then
+        return
+    end
     self.state = "loading"
     self:showLoading(_("Logging in..."))
-    local response = self.client:login(email, password)
-    if self.state == "closed" then
+    local request_token = self:nextJobToken("login")
+    Trapper:wrap(function()
+        local completed, response = Trapper:dismissableRunInSubprocess(function()
+            local Client = require("qireader.client")
+            local client = Client.new{
+                api_base = self.settings.api_base,
+                cookie = self.settings.cookie,
+            }
+            return client:login(email, password)
+        end, _("Logging in..."))
+        if self.state == "closed" or not self:isJobTokenCurrent("login", request_token) then
+            return
+        end
+        if not completed then
+            self.state = "closed"
+            self:showGroupsPage()
+            return
+        end
+        self:applyResponseSession(response)
+        if response.code ~= 200 or not response.json or not response.json.result then
+            clearSession(self)
+            self:showGroupsPage()
+            UIManager:show(InfoMessage:new{
+                text = _("Login failed: ") .. responseError(response),
+            })
+            self:showAccountDialog()
+            return
+        end
+        self.settings.user = response.json.result
+        self.login_fields.password = ""
+        self.save_settings()
+        self:closeLoginDialog()
+        self:closeActiveDialog()
+        self:openHome()
+    end)
+end
+
+function methods:startSubscriptionsLoad()
+    local token = self:nextJobToken("subscriptions")
+    local subscriptions_job = self:createBackgroundRequest({
+        method = "GET",
+        path = "/subscriptions",
+    })
+    if not subscriptions_job then
+        self:showError(_("Cannot load subscriptions: ") .. _("Network request failed"), function()
+            self:showGroupsFromCache()
+        end)
         return
     end
-    if response.code ~= 200 or not response.json or not response.json.result then
-        clearSession(self)
-        self:showGroupsPage()
-        UIManager:show(InfoMessage:new{
-            text = _("Login failed: ") .. responseError(response),
+    self:registerPendingJob("subscriptions", subscriptions_job)
+
+    local function finalizeFailure(response)
+        self:clearPendingJob("subscriptions", subscriptions_job)
+        self.state = "groups"
+        self:showError(_("Cannot load subscriptions: ") .. responseError(response), function()
+            self:showGroupsFromCache()
+        end)
+    end
+
+    local function pollUnreadCounts(subscriptions_response)
+        local unread_job = self:createBackgroundRequest({
+            method = "GET",
+            path = "/markers/unread/counts",
         })
-        self:showAccountDialog()
-        return
+        if not unread_job then
+            self:clearPendingJob("subscriptions", subscriptions_job)
+            self.state = "groups"
+            self:showGroups(subscriptions_response.json, nil)
+            return
+        end
+        self:registerPendingJob("unread_counts", unread_job)
+
+        local function pollUnread()
+            if self.state == "closed"
+                or not self:isJobTokenCurrent("subscriptions", token)
+                or self.pending_jobs.unread_counts ~= unread_job then
+                self:cancelPendingJob("unread_counts")
+                return
+            end
+            local done, unread_response = unread_job:poll()
+            if not done then
+                UIManager:scheduleIn(0.1, pollUnread)
+                return
+            end
+            self:clearPendingJob("unread_counts", unread_job)
+            local unread_json = unread_response and unread_response.code == 200 and unread_response.json or nil
+            self.state = "groups"
+            self:showGroups(subscriptions_response.json, unread_json)
+        end
+
+        pollUnread()
     end
-    self.settings.user = response.json.result
-    self.login_fields.password = ""
-    self.save_settings()
-    self:closeLoginDialog()
-    self:closeActiveDialog()
-    self:openHome()
+
+    local function pollSubscriptions()
+        if self.state == "closed"
+            or not self:isJobTokenCurrent("subscriptions", token)
+            or self.pending_jobs.subscriptions ~= subscriptions_job then
+            self:cancelPendingJob("subscriptions")
+            return
+        end
+        local done, response = subscriptions_job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, pollSubscriptions)
+            return
+        end
+        self:clearPendingJob("subscriptions", subscriptions_job)
+        self:applyResponseSession(response)
+        if response and response.code == 401 then
+            clearSession(self)
+            self.state = "groups"
+            self:showGroupsPage()
+            UIManager:show(InfoMessage:new{
+                text = _("Session expired. Please log in again from Account."),
+            })
+            return
+        end
+        if not response or response.code ~= 200 or not response.json then
+            finalizeFailure(response)
+            return
+        end
+        pollUnreadCounts(response)
+    end
+
+    pollSubscriptions()
 end
 
 function methods:openHome()
@@ -187,32 +308,12 @@ function methods:openHome()
         self:showGroupsFromCache()
         return
     end
+    if NetworkMgr:willRerunWhenOnline(function() self:openHome() end) then
+        return
+    end
     self.state = "loading"
     self:showLoading(_("Loading subscriptions..."))
-    local response = self.client:getSubscriptions()
-    if self.state == "closed" then
-        return
-    end
-    if response.code == 401 then
-        clearSession(self)
-        self:showGroupsPage()
-        UIManager:show(InfoMessage:new{
-            text = _("Session expired. Please log in again from Account."),
-        })
-        return
-    end
-    if response.code ~= 200 or not response.json then
-        self:showError(_("Cannot load subscriptions: ") .. responseError(response), function()
-            self:showGroupsFromCache()
-        end)
-        return
-    end
-    local unread_response = self.client:getUnreadCounts()
-    local unread_json
-    if unread_response.code == 200 then
-        unread_json = unread_response.json
-    end
-    self:showGroups(response.json, unread_json)
+    self:startSubscriptionsLoad()
 end
 
 return methods

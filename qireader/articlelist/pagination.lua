@@ -2,6 +2,7 @@ local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../
 
 local Device = require("device")
 local Size = require("ui/size")
+local UIManager = require("ui/uimanager")
 local item_module = require("qireader.articlelist.item")
 local Screen = Device.screen
 
@@ -171,80 +172,115 @@ function methods:canLoadChunk(chunk_index)
     return self.loaded_chunks[chunk_index - 1] ~= nil
 end
 
-function methods:fetchChunk(chunk_index, options)
+function methods:clearPendingFetch()
+    if self.pending_request and self.pending_request.cancel then
+        self.pending_request:cancel()
+    end
+    self.pending_request = nil
+    self.pending_request_chunk_index = nil
+    self.loading = false
+end
+
+function methods:finishPendingFetch()
+    self.pending_request = nil
+    self.pending_request_chunk_index = nil
+end
+
+function methods:startChunkFetch(chunk_index, options, callback)
     options = options or {}
     if self.closing or self.loaded_chunks[chunk_index] then
-        return nil, "skip"
+        return false, "skip"
     end
     if not self:canLoadChunk(chunk_index) then
-        return nil, "blocked"
+        return false, "blocked"
     end
+    if self.pending_request then
+        return false, "busy"
+    end
+
+    local job = self.controller:createBackgroundRequest({
+        method = "GET",
+        path = "/streams/" .. tostring(self:getStreamId()),
+        query = self:buildStreamQuery(self:getChunkCursor(chunk_index)),
+    })
+    if not job then
+        return false, "error"
+    end
+
+    self.pending_request = job
+    self.pending_request_chunk_index = chunk_index
     if options.background then
-        if self.loading or self.preloading_chunks[chunk_index] then
-            return nil, "busy"
-        end
         self.preloading_chunks[chunk_index] = true
     else
-        if self.loading then
-            return nil, "busy"
-        end
         self.loading = true
     end
 
-    local response = self.controller.client:getStream(
-        self:getStreamId(),
-        self:buildStreamQuery(self:getChunkCursor(chunk_index))
-    )
+    local function poll()
+        if self.closing or self.pending_request ~= job then
+            if self.pending_request == job then
+                self:clearPendingFetch()
+            end
+            return
+        end
 
-    if options.background then
-        self.preloading_chunks[chunk_index] = nil
-    else
-        self.loading = false
+        local done, response, err = job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, poll)
+            return
+        end
+
+        if options.background then
+            self.preloading_chunks[chunk_index] = nil
+        else
+            self.loading = false
+        end
+        self:finishPendingFetch()
+
+        if self.closing then
+            callback(nil, "closed")
+            return
+        end
+        if err == "cancelled" then
+            callback(nil, "closed")
+            return
+        end
+        self.controller:applyResponseSession(response)
+        if response and response.code == 401 then
+            self.controller:handleUnauthorized()
+            callback(nil, "unauthorized")
+            return
+        end
+        if not response or response.code ~= 200 or not response.json or not response.json.result then
+            callback(nil, "error")
+            return
+        end
+
+        self.loaded_chunks[chunk_index] = self.controller:normalizeArticlePage(self.target, response.json.result)
+        self:rebuildLoadedPages()
+        callback(self.loaded_chunks[chunk_index], nil)
     end
 
-    if self.closing then
-        return nil, "closed"
-    end
-    if response.code == 401 then
-        self.controller:handleUnauthorized()
-        return nil, "unauthorized"
-    end
-    if response.code ~= 200 or not response.json or not response.json.result then
-        return nil, "error"
-    end
-
-    self.loaded_chunks[chunk_index] = self.controller:normalizeArticlePage(self.target, response.json.result)
-    self:rebuildLoadedPages()
-    return self.loaded_chunks[chunk_index], nil
+    poll()
+    return true, nil
 end
 
-function methods:maybePreloadNextChunk()
-    if self.loading or self.closing then
-        return
+function methods:fetchChunk(chunk_index, options, callback)
+    options = options or {}
+    callback = callback or function() end
+    local started, err = self:startChunkFetch(chunk_index, options, function(chunk, fetch_err)
+        if not options.background then
+            self:refresh()
+        end
+        callback(chunk, fetch_err)
+    end)
+    if not started then
+        return nil, err
     end
-    local current_page = self.loaded_pages[self.show_page]
-    if not current_page then
-        return
-    end
-    local current_chunk_index = current_page.chunk_index
-    local next_chunk_index = current_chunk_index + 1
-    if self.loaded_chunks[next_chunk_index] or self.preloading_chunks[next_chunk_index] then
-        return
-    end
-    if not current_page.has_more then
-        return
-    end
-    local pages_per_chunk = self:getPagesPerChunk()
-    local first_page_in_chunk = (current_chunk_index - 1) * pages_per_chunk + 1
-    local last_page_in_chunk = first_page_in_chunk + pages_per_chunk - 1
-    local trigger_page = math.max(first_page_in_chunk, last_page_in_chunk - (self.preload_pages_before_end or 1))
-    if self.show_page < trigger_page then
-        return
-    end
-    local _, err = self:fetchChunk(next_chunk_index, { background = true })
-    if not err then
-        self:refresh()
-    end
+    return nil, nil
+end
+
+function methods.maybePreloadNextChunk()
+    -- Avoid speculative remote requests while the user is navigating pages.
 end
 
 function methods:loadPage(page)
@@ -263,31 +299,43 @@ function methods:loadPage(page)
         self:maybePreloadNextChunk()
         return
     end
-    if self.loading then
+    if self.loading or self.pending_request then
         return
     end
     local chunk_index = self:getChunkIndexForPage(page)
     self.show_page = page
+    self.loading = true
     self:refreshFooter()
-    local _, err = self:fetchChunk(chunk_index)
-    if err == "blocked" or err == "busy" then
-        self.show_page = previous_page_number
-        self:refresh()
-        return
-    end
-    if err then
-        self.show_page = previous_page_number
-        if err == "error" then
-            self.controller:showTransientMessage(_("Cannot load articles."))
+    self:refresh()
+    local _, err = self:fetchChunk(chunk_index, nil, function(_chunk, callback_err)
+        if self.closing then
+            return
+        end
+        if callback_err then
+            self.show_page = previous_page_number
+            if callback_err == "error" then
+                self.controller:showTransientMessage(_("Cannot load articles."))
+            end
+            self:refresh()
+            return
+        end
+        if previous_page_number ~= page then
+            self.controller:maybeMarkArticlePageRead(previous_page)
         end
         self:refresh()
+    end)
+    if err == "blocked" or err == "busy" then
+        self.show_page = previous_page_number
+        self.loading = false
+        self:refresh()
         return
     end
-    if previous_page_number ~= page then
-        self.controller:maybeMarkArticlePageRead(previous_page)
+    if err and err ~= "skip" then
+        self.show_page = previous_page_number
+        self.loading = false
+        self:refresh()
+        return
     end
-    self:refresh()
-    self:maybePreloadNextChunk()
 end
 
 function methods:reloadFromFirstPage()
@@ -300,6 +348,7 @@ function methods:reloadLayoutOnly()
 end
 
 function methods:reloadFromRemote()
+    self:clearPendingFetch()
     self.loaded_pages = {}
     self.loaded_chunks = {}
     self.show_page = 1

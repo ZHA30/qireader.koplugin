@@ -14,6 +14,10 @@ local QiArticleListWidget = FocusManager:extend{
     has_more = false,
     loading = false,
     closing = false,
+    active_dialog = nil,
+    detail_widget = nil,
+    pending_request = nil,
+    pending_request_chunk_index = nil,
     remote_batch_size = 50,
     preload_pages_before_end = 1,
 }
