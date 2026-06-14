@@ -20,12 +20,6 @@ function methods:getRemoteBatchSize()
     return self.remote_batch_size or 50
 end
 
-function methods:getPagesPerChunk()
-    local per_page = math.max(1, self:getEffectivePerPage())
-    local remote_batch = math.max(per_page, self:getRemoteBatchSize())
-    return math.max(1, math.ceil(remote_batch / per_page))
-end
-
 function methods:getTitleFontSize()
     return self.controller:getArticleSetting(self.target, "title_font_size") or 18
 end
@@ -100,58 +94,68 @@ function methods:getStreamId()
     return self.target.stream_id
 end
 
-function methods:getChunkIndexForPage(page)
-    return math.floor((page - 1) / self:getPagesPerChunk()) + 1
+function methods:getLastLoadedChunkIndex()
+    local chunk_index = 0
+    while self.loaded_chunks[chunk_index + 1] do
+        chunk_index = chunk_index + 1
+    end
+    return chunk_index
 end
 
-function methods:getPageOffsetInChunk(page)
-    local per_page = math.max(1, self:getEffectivePerPage())
-    local chunk_index = self:getChunkIndexForPage(page)
-    local first_page = (chunk_index - 1) * self:getPagesPerChunk() + 1
-    return (page - first_page) * per_page
+function methods:getNextLoadableChunkIndex()
+    local last_chunk_index = self:getLastLoadedChunkIndex()
+    if last_chunk_index == 0 then
+        return 1
+    end
+    local last_chunk = self.loaded_chunks[last_chunk_index]
+    if last_chunk and last_chunk.has_more then
+        return last_chunk_index + 1
+    end
+    return nil
 end
 
-function methods:buildPageFromChunk(page)
-    local chunk_index = self:getChunkIndexForPage(page)
-    local chunk = self.loaded_chunks[chunk_index]
-    if not chunk then
-        return nil
-    end
-    local per_page = math.max(1, self:getEffectivePerPage())
-    local start_index = self:getPageOffsetInChunk(page) + 1
-    if start_index > #chunk.entries then
-        return nil
-    end
-    local end_index = math.min(#chunk.entries, start_index + per_page - 1)
+function methods:getLoadedEntries()
     local entries = {}
-    for i = start_index, end_index do
-        entries[#entries + 1] = chunk.entries[i]
+    local chunk_index = 1
+    while self.loaded_chunks[chunk_index] do
+        local chunk_entries = self.loaded_chunks[chunk_index].entries or {}
+        for i = 1, #chunk_entries do
+            entries[#entries + 1] = chunk_entries[i]
+        end
+        chunk_index = chunk_index + 1
     end
-    return {
-        entries = entries,
-        has_more = end_index < #chunk.entries or chunk.has_more,
-        next_cursor = chunk.next_cursor,
-        chunk_index = chunk_index,
-        page_start_index = start_index,
-        page_end_index = end_index,
-    }
+    return entries
 end
 
 function methods:rebuildLoadedPages()
     self:setupItemMetrics()
     self.loaded_pages = {}
-    local page = 1
-    while true do
-        local built = self:buildPageFromChunk(page)
-        if not built then
-            break
-        end
-        self.loaded_pages[page] = built
+    local entries = self:getLoadedEntries()
+    local per_page = math.max(1, self:getEffectivePerPage())
+    local last_chunk_index = self:getLastLoadedChunkIndex()
+    local last_chunk = self.loaded_chunks[last_chunk_index]
+    local has_more = last_chunk and last_chunk.has_more == true or false
+    local page = 0
+    local start_index = 1
+    while start_index <= #entries do
         page = page + 1
+        local end_index = math.min(#entries, start_index + per_page - 1)
+        local page_entries = {}
+        for i = start_index, end_index do
+            page_entries[#page_entries + 1] = entries[i]
+        end
+        self.loaded_pages[page] = {
+            entries = page_entries,
+            has_more = end_index < #entries or has_more,
+            next_cursor = last_chunk and last_chunk.next_cursor or nil,
+            page_start_index = start_index,
+            page_end_index = end_index,
+        }
+        start_index = end_index + 1
     end
-    self.pages = math.max(1, page - 1)
+    self.pages = math.max(1, page)
     local last_page = self.loaded_pages[self.pages]
-    self.has_more = last_page and last_page.has_more or false
+    self.has_more = last_page and last_page.has_more or has_more
     if self.show_page > self.pages then
         self.show_page = self.pages
     end
@@ -176,12 +180,18 @@ function methods:clearPendingFetch()
     if self.pending_request and self.pending_request.cancel then
         self.pending_request:cancel()
     end
+    if self.pending_request_chunk_index and self.preloading_chunks then
+        self.preloading_chunks[self.pending_request_chunk_index] = nil
+    end
     self.pending_request = nil
     self.pending_request_chunk_index = nil
     self.loading = false
 end
 
 function methods:finishPendingFetch()
+    if self.pending_request_chunk_index and self.preloading_chunks then
+        self.preloading_chunks[self.pending_request_chunk_index] = nil
+    end
     self.pending_request = nil
     self.pending_request_chunk_index = nil
 end
@@ -279,8 +289,34 @@ function methods:fetchChunk(chunk_index, options, callback)
     return nil, nil
 end
 
-function methods.maybePreloadNextChunk()
-    -- Avoid speculative remote requests while the user is navigating pages.
+function methods:maybePreloadNextChunk()
+    if self.closing or self.loading or self.pending_request or not self.has_more then
+        return false
+    end
+    if not self.loaded_pages[self.show_page] then
+        return false
+    end
+    local remaining_pages = self.pages - self.show_page
+    local preload_pages = math.max(0, self.preload_pages_before_end or 0)
+    if remaining_pages > preload_pages then
+        return false
+    end
+    local chunk_index = self:getNextLoadableChunkIndex()
+    if not chunk_index or self.loaded_chunks[chunk_index] or self.preloading_chunks[chunk_index] then
+        return false
+    end
+
+    local err = select(2, self:fetchChunk(chunk_index, { background = true }, function(_chunk, fetch_err)
+        if self.closing then
+            return
+        end
+        if fetch_err then
+            return
+        end
+        self:refresh()
+        self:maybePreloadNextChunk()
+    end))
+    return err == nil
 end
 
 function methods:loadPage(page)
@@ -302,7 +338,10 @@ function methods:loadPage(page)
     if self.loading or self.pending_request then
         return
     end
-    local chunk_index = self:getChunkIndexForPage(page)
+    local chunk_index = self:getNextLoadableChunkIndex()
+    if not chunk_index then
+        return
+    end
     self.show_page = page
     self.loading = true
     self:refreshFooter()
@@ -319,10 +358,14 @@ function methods:loadPage(page)
             self:refresh()
             return
         end
-        if previous_page_number ~= page then
+        if not self.loaded_pages[self.show_page] and self.show_page > self.pages then
+            self.show_page = previous_page_number
+        end
+        if previous_page_number ~= self.show_page then
             self.controller:maybeMarkArticlePageRead(previous_page)
         end
         self:refresh()
+        self:maybePreloadNextChunk()
     end))
     if err == "blocked" or err == "busy" then
         self.show_page = previous_page_number

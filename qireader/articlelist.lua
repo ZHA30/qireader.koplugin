@@ -19,7 +19,7 @@ local QiArticleListWidget = FocusManager:extend{
     pending_request = nil,
     pending_request_chunk_index = nil,
     remote_batch_size = 50,
-    preload_pages_before_end = 1,
+    preload_pages_before_end = 2,
 }
 
 local function installMethods(target, methods)
