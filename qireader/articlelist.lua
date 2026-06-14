@@ -292,7 +292,7 @@ function QiArticleListWidget:resetLayoutCaches()
 end
 
 function QiArticleListWidget:getPerPage()
-    return self.controller.settings.article_items_per_page or 5
+    return self.controller:getArticleSetting(self.target, "items_per_page") or 5
 end
 
 function QiArticleListWidget:getRemoteBatchSize()
@@ -306,7 +306,7 @@ function QiArticleListWidget:getPagesPerChunk()
 end
 
 function QiArticleListWidget:getTitleFontSize()
-    return self.controller.settings.article_title_font_size or 18
+    return self.controller:getArticleSetting(self.target, "title_font_size") or 18
 end
 
 function QiArticleListWidget:getAvailableHeight()
@@ -340,13 +340,15 @@ function QiArticleListWidget:setupItemMetrics()
 end
 
 function QiArticleListWidget:buildStreamQuery(cursor)
+    local oldest_first = self.controller:getArticleSetting(self.target, "order_oldest_first") == true
+    local unread_only = self.controller:getArticleSetting(self.target, "show_unread_only") == true
     local query = {
         count = self:getRemoteBatchSize(),
-        articleOrder = self.controller.settings.article_order_oldest_first and 1 or 0,
-        unreadOnly = self.controller.settings.article_show_unread_only and true or nil,
+        articleOrder = oldest_first and 1 or 0,
+        unreadOnly = unread_only and true or nil,
     }
     if cursor then
-        if self.controller.settings.article_order_oldest_first then
+        if oldest_first then
             query.newerThan = cursor
         else
             query.olderThan = cursor
@@ -744,32 +746,40 @@ function QiArticleListWidget:showMenuDialog()
     dialog = ButtonDialog:new{
         buttons = {
             {{
-                text = self.controller.settings.article_show_unread_only
+                text = self.controller:getArticleSettingsScopeText(self.target),
+                callback = function()
+                    UIManager:close(dialog)
+                    self.controller:toggleArticleSettingsScope(self.target, self)
+                end,
+                align = "left",
+            }},
+            {{
+                text = self.controller:getArticleSetting(self.target, "show_unread_only")
                     and _("Unread only: On")
                     or _("Unread only: Off"),
                 callback = function()
                     UIManager:close(dialog)
-                    self.controller:toggleArticleUnreadOnly(self)
+                    self.controller:toggleArticleUnreadOnly(self.target, self)
                 end,
                 align = "left",
             }},
             {{
-                text = self.controller.settings.article_order_oldest_first
+                text = self.controller:getArticleSetting(self.target, "order_oldest_first")
                     and _("Oldest first: On")
                     or _("Oldest first: Off"),
                 callback = function()
                     UIManager:close(dialog)
-                    self.controller:toggleArticleOrder(self)
+                    self.controller:toggleArticleOrder(self.target, self)
                 end,
                 align = "left",
             }},
             {{
-                text = self.controller.settings.article_mark_read_on_page_turn
+                text = self.controller:getArticleSetting(self.target, "mark_read_on_page_turn")
                     and _("Mark on page turn: On")
                     or _("Mark on page turn: Off"),
                 callback = function()
                     UIManager:close(dialog)
-                    self.controller:toggleMarkReadOnPageTurn(self)
+                    self.controller:toggleMarkReadOnPageTurn(self.target, self)
                 end,
                 align = "left",
             }},
@@ -778,8 +788,9 @@ function QiArticleListWidget:showMenuDialog()
                 callback = function()
                     UIManager:close(dialog)
                     self.controller:showArticleNumberPicker(
+                        self.target,
                         self,
-                        "article_items_per_page",
+                        "items_per_page",
                         _("Items per page"),
                         {
                             value_min = 1,
@@ -798,8 +809,9 @@ function QiArticleListWidget:showMenuDialog()
                 callback = function()
                     UIManager:close(dialog)
                     self.controller:showArticleNumberPicker(
+                        self.target,
                         self,
-                        "article_title_font_size",
+                        "title_font_size",
                         _("Title font size"),
                         {
                             value_min = 12,

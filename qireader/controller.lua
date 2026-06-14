@@ -23,6 +23,14 @@ local Screen = Device.screen
 local Controller = {}
 Controller.__index = Controller
 
+local ARTICLE_SETTINGS_SCHEMA = {
+    "show_unread_only",
+    "order_oldest_first",
+    "mark_read_on_page_turn",
+    "items_per_page",
+    "title_font_size",
+}
+
 local function responseError(response)
     if not response then
         return _("No response")
@@ -31,6 +39,44 @@ local function responseError(response)
         return string.format("%s %s", tostring(response.code), response.status or "")
     end
     return response.status or _("Network request failed")
+end
+
+local function copyTable(source)
+    local copy = {}
+    for key, value in pairs(source or {}) do
+        if type(value) == "table" then
+            copy[key] = copyTable(value)
+        else
+            copy[key] = value
+        end
+    end
+    return copy
+end
+
+local function copyArticleSettings(source)
+    local result = {}
+    for i = 1, #ARTICLE_SETTINGS_SCHEMA do
+        local key = ARTICLE_SETTINGS_SCHEMA[i]
+        result[key] = source[key]
+    end
+    return result
+end
+
+local function requiresArticleRemoteReload(left, right)
+    return left.show_unread_only ~= right.show_unread_only
+        or left.order_oldest_first ~= right.order_oldest_first
+end
+
+local function requiresArticleLayoutReload(left, right)
+    return left.items_per_page ~= right.items_per_page
+        or left.title_font_size ~= right.title_font_size
+end
+
+local function getArticleTargetKey(target)
+    if not target or not target.stream_id then
+        return nil
+    end
+    return tostring(target.stream_id)
 end
 
 local function makeUnreadMap(data)
@@ -143,6 +189,107 @@ function Controller.new(args)
         article_widget = nil,
         readlater_tag_id = nil,
     }, Controller)
+end
+
+function Controller:getArticleSettingsRoot()
+    if type(self.settings.article_settings) ~= "table" then
+        self.settings.article_settings = {}
+    end
+    local root = self.settings.article_settings
+    if type(root.global) ~= "table" then
+        root.global = copyTable(Settings.article_defaults)
+    end
+    if type(root.custom) ~= "table" then
+        root.custom = {}
+    end
+    return root
+end
+
+function Controller:getGlobalArticleSettings()
+    local root = self:getArticleSettingsRoot()
+    return root.global
+end
+
+function Controller:getArticleCustomEntry(target)
+    local target_key = getArticleTargetKey(target)
+    if not target_key then
+        return nil
+    end
+    local root = self:getArticleSettingsRoot()
+    local entry = root.custom[target_key]
+    if type(entry) ~= "table" then
+        return nil
+    end
+    return entry
+end
+
+function Controller:isArticleCustomSettingsEnabled(target)
+    return self:getArticleCustomEntry(target) ~= nil
+end
+
+function Controller:getEffectiveArticleSettings(target)
+    local global_settings = self:getGlobalArticleSettings()
+    if not target then
+        return global_settings
+    end
+    local entry = self:getArticleCustomEntry(target)
+    if entry then
+        return entry
+    end
+    return global_settings
+end
+
+function Controller:getArticleSettingsScopeText(target)
+    if self:isArticleCustomSettingsEnabled(target) then
+        return _("Config: Custom")
+    end
+    return _("Config: Global")
+end
+
+function Controller:getArticleSetting(target, key)
+    local settings = self:getEffectiveArticleSettings(target)
+    return settings and settings[key] or nil
+end
+
+function Controller:setArticleSetting(target, key, value)
+    local target_key = getArticleTargetKey(target)
+    if target_key and self:isArticleCustomSettingsEnabled(target) then
+        self:getArticleSettingsRoot().custom[target_key][key] = value
+    else
+        self:getGlobalArticleSettings()[key] = value
+    end
+    self.save_settings()
+end
+
+function Controller:refreshArticleWidgetBySettingsDiff(widget, previous_settings, next_settings)
+    if requiresArticleRemoteReload(previous_settings, next_settings) then
+        self:refreshArticleWidget(widget)
+        return
+    end
+    if requiresArticleLayoutReload(previous_settings, next_settings) then
+        self:refreshArticleWidgetLayout(widget)
+        return
+    end
+    if widget then
+        widget:refresh()
+    end
+end
+
+function Controller:toggleArticleSettingsScope(target, widget)
+    local previous_settings = copyArticleSettings(self:getEffectiveArticleSettings(target))
+    local target_key = getArticleTargetKey(target)
+    if not target_key then
+        return
+    end
+    local root = self:getArticleSettingsRoot()
+    if root.custom[target_key] then
+        root.custom[target_key] = nil
+    else
+        root.custom[target_key] = copyArticleSettings(previous_settings)
+    end
+    self.save_settings()
+    local next_settings = copyArticleSettings(self:getEffectiveArticleSettings(target))
+    self:refreshArticleWidgetBySettingsDiff(widget, previous_settings, next_settings)
 end
 
 function Controller:close()
@@ -702,29 +849,29 @@ function Controller:refreshArticleWidgetLayout(widget)
     end
 end
 
-function Controller:toggleArticleUnreadOnly(widget)
-    self.settings.article_show_unread_only = not self.settings.article_show_unread_only
-    self.save_settings()
+function Controller:toggleArticleUnreadOnly(target, widget)
+    local current_value = self:getArticleSetting(target, "show_unread_only") == true
+    self:setArticleSetting(target, "show_unread_only", not current_value)
     self:refreshArticleWidget(widget)
 end
 
-function Controller:toggleArticleOrder(widget)
-    self.settings.article_order_oldest_first = not self.settings.article_order_oldest_first
-    self.save_settings()
+function Controller:toggleArticleOrder(target, widget)
+    local current_value = self:getArticleSetting(target, "order_oldest_first") == true
+    self:setArticleSetting(target, "order_oldest_first", not current_value)
     self:refreshArticleWidget(widget)
 end
 
-function Controller:toggleMarkReadOnPageTurn(widget)
-    self.settings.article_mark_read_on_page_turn = not self.settings.article_mark_read_on_page_turn
-    self.save_settings()
+function Controller:toggleMarkReadOnPageTurn(target, widget)
+    local current_value = self:getArticleSetting(target, "mark_read_on_page_turn") == true
+    self:setArticleSetting(target, "mark_read_on_page_turn", not current_value)
     if widget then
         widget:refresh()
     end
 end
 
-function Controller:showArticleNumberPicker(widget, setting_key, title, options)
+function Controller:showArticleNumberPicker(target, widget, setting_key, title, options)
     options = options or {}
-    local current_value = self.settings[setting_key] or options.default_value
+    local current_value = self:getArticleSetting(target, setting_key) or options.default_value
     local spin_widget = SpinWidget:new{
         title_text = title,
         value = current_value,
@@ -733,8 +880,7 @@ function Controller:showArticleNumberPicker(widget, setting_key, title, options)
         default_value = options.default_value,
         keep_shown_on_apply = true,
         callback = function(spin)
-            self.settings[setting_key] = spin.value
-            self.save_settings()
+            self:setArticleSetting(target, setting_key, spin.value)
             if options.on_apply then
                 options.on_apply(widget)
             end
@@ -767,7 +913,9 @@ function Controller:markPageRead(page)
 end
 
 function Controller:maybeMarkArticlePageRead(page)
-    if not page or not self.settings.article_mark_read_on_page_turn then
+    local first_entry = page and page.entries and page.entries[1] or nil
+    local target = first_entry and first_entry.target or nil
+    if not page or self:getArticleSetting(target, "mark_read_on_page_turn") ~= true then
         return
     end
     self:markPageRead(page)

@@ -127,6 +127,12 @@ msgstr "列表项字号"
 msgid "Title font size: %d"
 msgstr "列表项字号：%d"
 
+msgid "Config: Custom"
+msgstr "配置：自定义"
+
+msgid "Config: Global"
+msgstr "配置：全局"
+
 msgid "Cannot load article content."
 msgstr "无法加载文章内容。"
 
