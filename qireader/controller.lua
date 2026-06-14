@@ -624,14 +624,56 @@ function Controller:normalizeArticlePage(target, result)
     return normalized
 end
 
-function Controller.formatArticleDate(_, published_at)
+function Controller.formatArticleDate(self, published_at)
+    if not self then
+        return "--"
+    end
     if not published_at then
         return "--"
     end
-    local seconds = tonumber(published_at) and math.floor(tonumber(published_at) / 1000) or nil
+    local timestamp = tonumber(published_at)
+    local seconds = timestamp and math.floor(timestamp / 1000) or nil
     if not seconds then
         return "--"
     end
+    local now = os.time()
+    if seconds > now then
+        seconds = now
+    end
+
+    local article_day = os.date("*t", seconds)
+    local now_day = os.date("*t", now)
+    local article_day_start = os.time{
+        year = article_day.year,
+        month = article_day.month,
+        day = article_day.day,
+        hour = 0,
+        min = 0,
+        sec = 0,
+    }
+    local today_start = os.time{
+        year = now_day.year,
+        month = now_day.month,
+        day = now_day.day,
+        hour = 0,
+        min = 0,
+        sec = 0,
+    }
+    local elapsed = now - seconds
+
+    if article_day_start == today_start then
+        if elapsed < 3600 then
+            local minutes = math.max(1, math.floor(elapsed / 60))
+            return string.format("%dm", minutes)
+        end
+        local hours = math.max(1, math.floor(elapsed / 3600))
+        return string.format("%dh", hours)
+    end
+
+    if article_day_start == today_start - 86400 then
+        return _("Yesterday")
+    end
+
     return os.date("%m-%d", seconds)
 end
 
