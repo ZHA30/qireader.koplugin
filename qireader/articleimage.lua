@@ -139,7 +139,7 @@ local function requestToFile(url, path, referer)
         redirect_count = redirect_count + 1
         local parsed = socket_url.parse(current_url)
         if not parsed or (parsed.scheme ~= "http" and parsed.scheme ~= "https") then
-            return nil, _("Unsupported image URL.")
+            return nil, _("Bad image URL.")
         end
         os.remove(path)
         local file, file_err = io.open(path, "wb")
@@ -161,7 +161,7 @@ local function requestToFile(url, path, referer)
         }
         local requester = parsed.scheme == "https" and https or http
         socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
-        local code, response_headers, status = socket.skip(1, requester.request(request))
+        local code, response_headers = socket.skip(1, requester.request(request))
         socketutil:reset_timeout()
         local numeric_code = tonumber(code)
         if numeric_code and numeric_code >= 300 and numeric_code < 400 then
@@ -171,22 +171,22 @@ local function requestToFile(url, path, referer)
                 current_url = next_url
                 os.remove(path)
             else
-                return nil, status or _("Image download failed.")
+                return nil, _("Download failed.")
             end
         elseif numeric_code and numeric_code >= 200 and numeric_code < 300 then
             return response_headers, nil, current_url
         else
             os.remove(path)
-            return nil, status or tostring(code or _("Image download failed."))
+            return nil, _("Download failed.")
         end
     end
     os.remove(path)
-    return nil, _("Too many image redirects.")
+    return nil, _("Too many redirects.")
 end
 
 function ArticleImage.downloadToCache(url, referer)
     if type(url) ~= "string" or url == "" then
-        return nil, _("Unsupported image URL.")
+        return nil, _("Bad image URL.")
     end
     local ok, make_path_err = util.makePath(CACHE_DIR)
     if not ok then
@@ -206,7 +206,7 @@ function ArticleImage.downloadToCache(url, referer)
     local ext = getUrlExtension(final_url) or getMimeExtension(headers) or detectImageExtension(tmp_path)
     if not ext then
         os.remove(tmp_path)
-        return nil, _("Unsupported image format.")
+        return nil, _("Unsupported format.")
     end
     local final_path = string.format("%s/%s.%s", CACHE_DIR, cache_key, ext)
     os.remove(final_path)
@@ -220,7 +220,7 @@ end
 
 function ArticleImage.open(controller, ref, owner_widget)
     if not ref or type(ref.url) ~= "string" or ref.url == "" then
-        showMessage(controller, _("Cannot open image."))
+        showMessage(controller, _("Open failed."))
         return
     end
     local NetworkMgr = require("ui/network/manager")
@@ -237,13 +237,13 @@ function ArticleImage.open(controller, ref, owner_widget)
         local completed, path, err = Trapper:dismissableRunInSubprocess(function()
             local ArticleImageWorker = require("qireader.articleimage")
             return ArticleImageWorker.downloadToCache(url, referer)
-        end, _("Downloading image..."))
+        end, _("Downloading..."))
         if not completed then
-            showMessage(controller, _("Image download interrupted."))
+            showMessage(controller, _("Download interrupted."))
             return
         end
         if not path then
-            showMessage(controller, err or _("Cannot open image."))
+            showMessage(controller, err or _("Open failed."))
             return
         end
         if owner_widget and owner_widget.closing then
@@ -259,7 +259,7 @@ function ArticleImage.open(controller, ref, owner_widget)
             }
         end)
         if not ok or not image_viewer then
-            showMessage(controller, _("Cannot open image."))
+            showMessage(controller, _("Open failed."))
             return
         end
         UIManager:show(image_viewer)
