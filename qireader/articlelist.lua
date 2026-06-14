@@ -28,6 +28,11 @@ local util = require("util")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 
+local ARTICLE_SEPARATOR_COLOR = Blitbuffer.COLOR_DARK_GRAY
+local ARTICLE_DIM_TEXT_COLOR = Blitbuffer.COLOR_GRAY_3
+local ARTICLE_ACTION_COLOR = Blitbuffer.COLOR_BLACK
+local ARTICLE_ACTION_DIM_COLOR = Blitbuffer.COLOR_DARK_GRAY
+
 local QiArticleItemWidget = InputContainer:extend{
     width = nil,
     height = nil,
@@ -84,6 +89,8 @@ function QiArticleItemWidget:rebuild()
     subtitle_probe:free()
     local vertical_padding = Size.padding.small
     local subtitle_gap = Size.padding.small
+    local text_color = item.status == 0 and Blitbuffer.COLOR_BLACK or ARTICLE_DIM_TEXT_COLOR
+    local action_color = item.is_read_later and ARTICLE_ACTION_DIM_COLOR or ARTICLE_ACTION_COLOR
     local title_area_height = math.max(
         title_line_height,
         row_height - subtitle_height - subtitle_gap - vertical_padding * 2
@@ -104,11 +111,8 @@ function QiArticleItemWidget:rebuild()
         end,
         show_parent = self,
     }
-    action_button.frame.color = Blitbuffer.COLOR_DARK_GRAY
-    if item.is_read_later then
-        action_button.label_widget.fgcolor = Blitbuffer.COLOR_GRAY_2
-        action_button.frame.color = Blitbuffer.COLOR_GRAY_2
-    end
+    action_button.label_widget.fgcolor = action_color
+    action_button.frame.color = action_color
     local action_button_width = action_button:getSize().w
     local content_width = math.max(
         10,
@@ -123,7 +127,7 @@ function QiArticleItemWidget:rebuild()
         line_height = 0.15,
         height_overflow_show_ellipsis = true,
         alignment = "left",
-        fgcolor = item.status == 0 and Blitbuffer.COLOR_BLACK or Blitbuffer.COLOR_GRAY_3,
+        fgcolor = text_color,
     }
     local subtitle_widget = TextBoxWidget:new{
         text = string.format("%s | %s", item.date_text or "", item.source_title or ""),
@@ -134,7 +138,7 @@ function QiArticleItemWidget:rebuild()
         line_height = 0.1,
         height_overflow_show_ellipsis = true,
         alignment = "left",
-        fgcolor = item.status == 0 and Blitbuffer.COLOR_DARK_GRAY or Blitbuffer.COLOR_GRAY_2,
+        fgcolor = text_color,
     }
 
     local text_stack = VerticalGroup:new{
@@ -221,7 +225,7 @@ function QiArticleListWidget:init()
         align = "center",
         title = self.title,
         title_face = Font:getFace("smallinfofontbold"),
-        bottom_line_color = Blitbuffer.COLOR_LIGHT_GRAY,
+        bottom_line_color = ARTICLE_SEPARATOR_COLOR,
         with_bottom_line = true,
         bottom_line_h_padding = Size.padding.large,
         left_icon = "appbar.menu",
@@ -236,7 +240,7 @@ function QiArticleListWidget:init()
 
     self.footer_line = LineWidget:new{
         dimen = Geom:new{ w = self.dimen.w, h = Size.line.thick },
-        background = Blitbuffer.COLOR_LIGHT_GRAY,
+        background = ARTICLE_SEPARATOR_COLOR,
     }
     self.footer_group = HorizontalGroup:new{}
     self.footer_container = BottomContainer:new{
@@ -647,7 +651,7 @@ function QiArticleListWidget:refreshItems()
                 dimen = Geom:new{ w = self.item_width, h = self.item_spacing },
                 LineWidget:new{
                     dimen = Geom:new{ w = self.item_width, h = math.max(1, Size.line.thin) },
-                    background = Blitbuffer.COLOR_LIGHT_GRAY,
+                    background = ARTICLE_SEPARATOR_COLOR,
                 },
             })
         end
@@ -773,11 +777,18 @@ function QiArticleListWidget:showMenuDialog()
                 text = string.format(_("Items per page: %d"), self:getPerPage()),
                 callback = function()
                     UIManager:close(dialog)
-                    self.controller:showArticleNumberInput(
+                    self.controller:showArticleNumberPicker(
                         self,
                         "article_items_per_page",
                         _("Items per page"),
-                        self:getPerPage()
+                        {
+                            value_min = 1,
+                            value_max = 20,
+                            default_value = 5,
+                            on_apply = function(widget)
+                                self.controller:refreshArticleWidgetLayout(widget)
+                            end,
+                        }
                     )
                 end,
                 align = "left",
@@ -786,11 +797,18 @@ function QiArticleListWidget:showMenuDialog()
                 text = string.format(_("Title font size: %d"), self:getTitleFontSize()),
                 callback = function()
                     UIManager:close(dialog)
-                    self.controller:showArticleNumberInput(
+                    self.controller:showArticleNumberPicker(
                         self,
                         "article_title_font_size",
                         _("Title font size"),
-                        self:getTitleFontSize()
+                        {
+                            value_min = 12,
+                            value_max = 48,
+                            default_value = 18,
+                            on_apply = function(widget)
+                                self.controller:refreshArticleWidgetLayout(widget)
+                            end,
+                        }
                     )
                 end,
                 align = "left",

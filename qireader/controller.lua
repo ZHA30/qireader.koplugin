@@ -10,12 +10,12 @@ local Client = require("qireader.client")
 local ConfirmBox = require("ui/widget/confirmbox")
 local Device = require("device")
 local InfoMessage = require("ui/widget/infomessage")
-local InputDialog = require("ui/widget/inputdialog")
 local Menu = require("ui/widget/menu")
 local MultiInputDialog = require("ui/widget/multiinputdialog")
 local NetworkMgr = require("ui/network/manager")
 local Settings = require("qireader.settings")
 local Size = require("ui/size")
+local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
 local util = require("util")
 local Screen = Device.screen
@@ -722,49 +722,25 @@ function Controller:toggleMarkReadOnPageTurn(widget)
     end
 end
 
-function Controller:showArticleNumberInput(widget, setting_key, title, current_value)
-    local dialog
-    dialog = InputDialog:new{
-        title = title,
-        input = tostring(current_value or ""),
-        input_type = "number",
-        buttons = {
-            {
-                {
-                    text = _("Cancel"),
-                    callback = function()
-                        UIManager:close(dialog)
-                    end,
-                },
-                {
-                    text = _("OK"),
-                    callback = function()
-                        local value = dialog:getInputValue()
-                        if not value then
-                            self:showTransientMessage(_("Invalid number."))
-                            return
-                        end
-                        if setting_key == "article_items_per_page" then
-                            value = math.max(1, math.min(20, math.floor(value)))
-                        else
-                            value = math.max(12, math.min(48, math.floor(value)))
-                        end
-                        self.settings[setting_key] = value
-                        self.save_settings()
-                        UIManager:close(dialog)
-                        if setting_key == "article_items_per_page"
-                            or setting_key == "article_title_font_size" then
-                            self:refreshArticleWidgetLayout(widget)
-                        else
-                            self:refreshArticleWidget(widget)
-                        end
-                    end,
-                },
-            },
-        },
+function Controller:showArticleNumberPicker(widget, setting_key, title, options)
+    options = options or {}
+    local current_value = self.settings[setting_key] or options.default_value
+    local spin_widget = SpinWidget:new{
+        title_text = title,
+        value = current_value,
+        value_min = options.value_min,
+        value_max = options.value_max,
+        default_value = options.default_value,
+        keep_shown_on_apply = true,
+        callback = function(spin)
+            self.settings[setting_key] = spin.value
+            self.save_settings()
+            if options.on_apply then
+                options.on_apply(widget)
+            end
+        end,
     }
-    UIManager:show(dialog)
-    dialog:onShowKeyboard()
+    UIManager:show(spin_widget)
 end
 
 function Controller:markPageRead(page)
