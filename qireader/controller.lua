@@ -37,6 +37,7 @@ function Controller.new(args)
         readlater_tag_callbacks = nil,
         pending_jobs = {},
         job_tokens = {},
+        content_prefetch_queue = {},
         cache = Cache.new(args.settings.cache),
     }, Controller)
 end
@@ -104,6 +105,7 @@ function Controller:cancelAllPendingJobs()
         end
         self.pending_jobs[key] = nil
     end
+    self.content_prefetch_queue = {}
 end
 
 function Controller:applyResponseSession(response)
