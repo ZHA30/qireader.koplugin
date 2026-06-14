@@ -902,9 +902,6 @@ function methods:openArticleContent(target, entry, detail_widget, owner_widget)
         end) then
         return
     end
-    if target and target.stream_id then
-        self:cancelPendingJob(CONTENT_PREFETCH_JOB_PREFIX .. tostring(target.stream_id))
-    end
     local missing_entries = { entry }
     self:requestArticleContents(target, missing_entries, ARTICLE_CONTENT_JOB_KEY, nil, function(payloads, err)
         if err == "cancelled" or err == "unauthorized" then
