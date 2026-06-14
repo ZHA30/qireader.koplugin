@@ -44,6 +44,17 @@ local function encodeQuery(query)
     return "?" .. table.concat(parts, "&")
 end
 
+local function appendQuery(url, query)
+    local encoded_query = encodeQuery(query)
+    if encoded_query == "" then
+        return url
+    end
+    if url:find("?", 1, true) then
+        return url .. "&" .. encoded_query:sub(2)
+    end
+    return url .. encoded_query
+end
+
 local function decodeJson(body)
     if not body or body == "" then return nil end
     local ok, decoded = pcall(JSON.decode, body, JSON.decode.simple)
@@ -62,12 +73,22 @@ end
 function Client:request(method, path, options)
     options = options or {}
     local body
+    local use_session = options.use_session ~= false
     local headers = {
         ["Accept"] = "application/json",
-        ["X-Api-Version"] = "21.0.0",
     }
-    if self.settings.cookie then
+    if use_session then
+        headers["X-Api-Version"] = "21.0.0"
+    end
+    if use_session and self.settings.cookie then
         headers["Cookie"] = self.settings.cookie
+    end
+    if options.headers then
+        for key, value in pairs(options.headers) do
+            if value ~= nil then
+                headers[key] = value
+            end
+        end
     end
     if options.body then
         body = JSON.encode(options.body)
@@ -76,8 +97,9 @@ function Client:request(method, path, options)
     end
 
     local sink = {}
+    local url = appendQuery(options.url or (self.api_base .. (path or "")), options.query)
     local request = {
-        url = self.api_base .. path .. encodeQuery(options.query),
+        url = url,
         method = method,
         headers = headers,
         sink = ltn12.sink.table(sink),
@@ -92,8 +114,8 @@ function Client:request(method, path, options)
 
     local response_body = table.concat(sink)
     local json = decodeJson(response_body)
-    local cookie = joinCookie(response_headers)
-    if cookie then
+    local cookie = use_session and joinCookie(response_headers) or nil
+    if use_session and cookie then
         self.settings.cookie = cookie
     end
 

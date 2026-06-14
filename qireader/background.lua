@@ -16,8 +16,11 @@ local function newJob(client_settings, request_spec)
             request_spec.method,
             request_spec.path,
             {
+                url = request_spec.url,
                 query = request_spec.query,
                 body = request_spec.body,
+                headers = request_spec.headers,
+                use_session = request_spec.use_session,
             }
         ))
         local ok, encoded = pcall(buffer.encode, results)

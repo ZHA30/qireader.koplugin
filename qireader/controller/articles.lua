@@ -7,6 +7,9 @@ local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 
 local methods = {}
+local READ_MARK_JOB_PREFIX = "article_mark_read:"
+local FULL_TEXT_API_URL = "https://nettools3.oxyry.com/text"
+local FULL_TEXT_JOB_PREFIX = "article_full_text:"
 
 local function getReadLaterFlag(entry, tag_id)
     if not entry or not tag_id then
@@ -35,6 +38,31 @@ local function buildArticleContent(entry, response)
     local formatted, media_refs = ArticleContent.format(entry, content)
     local title = entry.title or _("Untitled")
     return formatted, title, media_refs
+end
+
+local function buildFullTextContent(entry, response)
+    local content = response.json and response.json.content or nil
+    if type(content) ~= "string" or content == "" then
+        return nil
+    end
+    local formatted, media_refs = ArticleContent.format(entry, content)
+    local title = entry.title or response.json.title or _("Untitled")
+    return formatted, title, media_refs
+end
+
+local function isCurrentDetailWidget(controller, entry, widget)
+    return widget
+        and not widget.closing
+        and widget.entry
+        and widget.entry.id == entry.id
+        and widget.updateArticleDetail
+        and controller.article_detail_widget == widget
+end
+
+local function setFullTextState(widget, state, entry_id)
+    if widget and not widget.closing and widget.setFullTextState then
+        widget:setFullTextState(state, entry_id)
+    end
 end
 
 function methods:syncReadLaterEntry(entry)
@@ -185,6 +213,7 @@ function methods:onArticleDetailClosed(widget)
     if self.article_detail_widget == widget then
         self.article_detail_widget = nil
     end
+    self:cancelArticleFullText(widget and widget.entry or nil)
     UIManager:close(widget)
 end
 
@@ -237,6 +266,90 @@ function methods:maybeMarkArticlePageRead(page)
         return
     end
     self:markPageRead(page)
+end
+
+function methods:applyArticleReadState(entry)
+    if not entry or not entry.id then
+        return false
+    end
+    local entry_id = entry.id
+    local changed = false
+    if entry.status == 0 then
+        entry.status = 1
+        changed = true
+    end
+    if self.article_widget and self.article_widget.loaded_chunks then
+        local loaded_chunks = self.article_widget.loaded_chunks
+        for chunk_index in pairs(loaded_chunks) do
+            local chunk = loaded_chunks[chunk_index]
+            local entries = chunk and chunk.entries or nil
+            if entries then
+                for i = 1, #entries do
+                    local item = entries[i]
+                    if item.id == entry_id and item.status == 0 then
+                        item.status = 1
+                        changed = true
+                    end
+                end
+            end
+        end
+        if changed and not self.article_widget.closing then
+            self.article_widget:refresh()
+        end
+    end
+    if self.article_detail_widget
+        and self.article_detail_widget.entry
+        and self.article_detail_widget.entry.id == entry_id
+        and self.article_detail_widget.entry.status == 0 then
+        self.article_detail_widget.entry.status = 1
+        changed = true
+    end
+    return changed
+end
+
+function methods:markArticleRead(entry)
+    if not self:applyArticleReadState(entry) then
+        return
+    end
+    local job_key = READ_MARK_JOB_PREFIX .. tostring(entry.id)
+    local job_token = self:nextJobToken(job_key)
+    local job = self:createBackgroundRequest({
+        method = "PUT",
+        path = "/markers/reads",
+        body = {
+            type = "entries",
+            entryIds = { entry.id },
+        },
+    })
+    if not job then
+        return
+    end
+    self:registerPendingJob(job_key, job)
+    local function poll()
+        if self.state == "closed"
+            or not self:isJobTokenCurrent(job_key, job_token)
+            or self.pending_jobs[job_key] ~= job then
+            self:cancelPendingJob(job_key)
+            return
+        end
+        local done, response, err = job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, poll)
+            return
+        end
+        self:clearPendingJob(job_key, job)
+        if err == "cancelled" then
+            return
+        end
+        if self.state == "closed" or not self:isJobTokenCurrent(job_key, job_token) then
+            return
+        end
+        self:applyResponseSession(response)
+        if response and response.code == 401 then
+            self:handleUnauthorized()
+        end
+    end
+    poll()
 end
 
 function methods:toggleReadLater(entry, widget)
@@ -316,7 +429,103 @@ function methods:openArticleImage(ref, widget)
     ArticleImage.open(self, ref, widget)
 end
 
+function methods:cancelArticleFullText(entry)
+    if entry and entry.id then
+        self:cancelPendingJob(FULL_TEXT_JOB_PREFIX .. tostring(entry.id))
+    end
+end
+
+function methods:loadArticleFullText(entry, detail_widget)
+    if not entry or not entry.url or entry.url == "" then
+        setFullTextState(detail_widget, "error", entry and entry.id or nil)
+        self:showTransientMessage(_("Cannot load full article."))
+        return
+    end
+    if not isCurrentDetailWidget(self, entry, detail_widget) then
+        return
+    end
+    if NetworkMgr and NetworkMgr.willRerunWhenOnline
+        and NetworkMgr:willRerunWhenOnline(function()
+            self:loadArticleFullText(entry, detail_widget)
+        end) then
+        return
+    end
+    if not isCurrentDetailWidget(self, entry, detail_widget) then
+        return
+    end
+
+    local job_key = FULL_TEXT_JOB_PREFIX .. tostring(entry.id)
+    local job_token = self:nextJobToken(job_key)
+    setFullTextState(detail_widget, "loading", entry.id)
+
+    local job = self:createBackgroundRequest({
+        method = "GET",
+        url = FULL_TEXT_API_URL,
+        query = {
+            url = entry.url,
+            ["keep-classes"] = "1",
+        },
+        headers = {
+            ["Referer"] = "https://www.qireader.com/",
+        },
+        use_session = false,
+    })
+    if not job then
+        setFullTextState(detail_widget, "error", entry.id)
+        self:showTransientMessage(_("Cannot load full article."))
+        return
+    end
+    self:registerPendingJob(job_key, job)
+
+    local function poll()
+        if self.state == "closed"
+            or not self:isJobTokenCurrent(job_key, job_token)
+            or self.pending_jobs[job_key] ~= job
+            or not isCurrentDetailWidget(self, entry, detail_widget) then
+            self:cancelPendingJob(job_key)
+            return
+        end
+        local done, response, err = job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, poll)
+            return
+        end
+        self:clearPendingJob(job_key, job)
+        if err == "cancelled" then
+            return
+        end
+        if self.state == "closed"
+            or not self:isJobTokenCurrent(job_key, job_token)
+            or not isCurrentDetailWidget(self, entry, detail_widget) then
+            return
+        end
+        if not response or response.code ~= 200 then
+            setFullTextState(detail_widget, "error", entry.id)
+            self:showTransientMessage(_("Cannot load full article."))
+            return
+        end
+        local formatted, title, media_refs = buildFullTextContent(entry, response)
+        if not formatted then
+            setFullTextState(detail_widget, "error", entry.id)
+            self:showTransientMessage(_("Cannot load full article."))
+            return
+        end
+        detail_widget:updateArticleDetail(entry, formatted, title, media_refs)
+        setFullTextState(detail_widget, "loaded", entry.id)
+    end
+    poll()
+end
+
 function methods:openArticleContent(target, entry, detail_widget)
+    if detail_widget
+        and detail_widget.entry
+        and entry
+        and detail_widget.entry.id ~= entry.id then
+        self:cancelArticleFullText(detail_widget.entry)
+        if detail_widget.setFullTextState then
+            detail_widget:setFullTextState("idle", detail_widget.entry.id)
+        end
+    end
     if NetworkMgr and NetworkMgr.willRerunWhenOnline
         and NetworkMgr:willRerunWhenOnline(function()
             self:openArticleContent(target, entry, detail_widget)
@@ -369,6 +578,7 @@ function methods:openArticleContent(target, entry, detail_widget)
             self:showTransientMessage(_("Cannot load article content."))
             return
         end
+        self:markArticleRead(entry)
         local formatted, title, media_refs = buildArticleContent(entry, response)
         if detail_widget
             and detail_widget.updateArticleDetail

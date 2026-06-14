@@ -6,8 +6,8 @@ local util = require("util")
 local ArticleContent = {}
 local DEFAULT_PAGE_MARGIN_VERTICAL = 8
 local DEFAULT_PAGE_MARGIN_HORIZONTAL = 12
-local MEDIA_LINK_SCHEME = "qireader-image://"
-local MEDIA_LINK_PATTERN = "^qireader%-image://[%w_%-]+$"
+local MEDIA_LINK_SCHEME = "https://qireader.invalid/image/"
+local MEDIA_LINK_PATTERN = "^https://qireader%.invalid/image/[%w_%-]+$"
 
 local MEDIA_TAGS = {
     { tag = "figure", label = "Image", paired = true, void = false },

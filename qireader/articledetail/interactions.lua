@@ -1,5 +1,6 @@
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../../i18n/po.lua")
 
+local Blitbuffer = require("ffi/blitbuffer")
 local BD = require("ui/bidi")
 local ButtonDialog = require("ui/widget/buttondialog")
 local FontChooser = require("ui/widget/fontchooser")
@@ -10,7 +11,8 @@ local T = require("ffi/util").template
 local Device = require("device")
 
 local methods = {}
-local IMAGE_LINK_PATTERN = "^qireader%-image://([%w_%-]+)$"
+local IMAGE_LINK_PATTERN = "^https://qireader%.invalid/image/([%w_%-]+)$"
+local LEGACY_IMAGE_LINK_PATTERN = "^qireader%-image://([%w_%-]+)$"
 
 local function getLinkUri(link)
     if type(link) == "string" then
@@ -31,8 +33,105 @@ function methods.getReadLaterButtonText()
     return _("RIT")
 end
 
+function methods:getFullTextButtonText()
+    if self:isFullTextLoading() then
+        return _("Loading")
+    end
+    return _("Fulltext")
+end
+
 function methods:isReadLaterActive()
     return self.entry and self.entry.is_read_later == true or false
+end
+
+function methods:isFullTextStateForCurrentEntry()
+    local entry_id = self.entry and self.entry.id or nil
+    return entry_id ~= nil and self.full_text_entry_id == entry_id
+end
+
+function methods:isFullTextLoading()
+    return self.full_text_state == "loading" and self:isFullTextStateForCurrentEntry()
+end
+
+function methods:isFullTextLoaded()
+    return self.full_text_state == "loaded" and self:isFullTextStateForCurrentEntry()
+end
+
+function methods:resetFullTextState(entry_id)
+    self.full_text_state = "idle"
+    self.full_text_entry_id = entry_id or (self.entry and self.entry.id or nil)
+    self.full_text_original = nil
+end
+
+function methods:refreshFullTextButtonStyle()
+    if not self.button_table or not self.button_table.getButtonById then
+        return
+    end
+    local button = self.button_table:getButtonById("full_text")
+    if not button or not button.label_widget then
+        return
+    end
+    if self:isFullTextLoading() or self:isFullTextLoaded() then
+        button.label_widget.fgcolor = Blitbuffer.COLOR_DARK_GRAY
+    else
+        button.label_widget.fgcolor = Blitbuffer.COLOR_BLACK
+    end
+    if button.label_widget.update then
+        button.label_widget:update()
+    end
+end
+
+function methods:setFullTextState(state, entry_id)
+    self.full_text_state = state or "idle"
+    self.full_text_entry_id = entry_id or (self.entry and self.entry.id or nil)
+    if self.full_text_state == "idle" then
+        self.full_text_original = nil
+    end
+    self:refreshBottomButtons()
+    UIManager:setDirty(self, function()
+        return "partial", self.movable and self.movable.dimen or self.frame.dimen
+    end)
+end
+
+function methods:saveFullTextOriginal()
+    local entry_id = self.entry and self.entry.id or nil
+    if not entry_id then
+        return
+    end
+    if self.full_text_original and self.full_text_original.entry_id == entry_id then
+        return
+    end
+    self.full_text_original = {
+        entry_id = entry_id,
+        title = self.title,
+        html = self.html,
+        media_refs = self.media_refs,
+    }
+end
+
+function methods:closeFullText()
+    if not self:isFullTextLoaded() then
+        return false
+    end
+    local entry_id = self.entry and self.entry.id or nil
+    local original = self.full_text_original
+    if not original or original.entry_id ~= entry_id then
+        self:resetFullTextState(entry_id)
+        self:refreshBottomButtons()
+        return true
+    end
+    self.title = original.title or self.title
+    self.html = original.html or self.html
+    self.media_refs = original.media_refs
+    self.full_text_original = nil
+    self.full_text_state = "idle"
+    self.full_text_entry_id = entry_id
+    if self.titlebar then
+        self.titlebar:setTitle(self.title)
+    end
+    self:refreshBottomButtons()
+    self:rebuildContent()
+    return true
 end
 
 function methods:canGoPrevArticle()
@@ -65,6 +164,21 @@ function methods:toggleReadLater()
     UIManager:setDirty(self, function()
         return "partial", self.movable and self.movable.dimen or self.frame.dimen
     end)
+end
+
+function methods:loadFullText()
+    if self:isFullTextLoading() then
+        return
+    end
+    if self:closeFullText() then
+        return
+    end
+    if not self.controller or not self.entry or not self.controller.loadArticleFullText then
+        self:setFullTextState("error")
+        return
+    end
+    self:saveFullTextOriginal()
+    self.controller:loadArticleFullText(self.entry, self)
 end
 
 function methods:goToPrevArticle()
@@ -201,7 +315,7 @@ end
 
 function methods:onHtmlLinkTapped(link)
     local uri = getLinkUri(link)
-    local ref_id = uri and uri:match(IMAGE_LINK_PATTERN)
+    local ref_id = uri and (uri:match(IMAGE_LINK_PATTERN) or uri:match(LEGACY_IMAGE_LINK_PATTERN))
     if not ref_id then
         return
     end

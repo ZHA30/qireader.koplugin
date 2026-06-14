@@ -32,6 +32,9 @@ local QiArticleDetailWidget = InputContainer:extend{
     active_dialog = nil,
     font_face = DEFAULT_FONT_FILE,
     font_size = DEFAULT_FONT_SIZE,
+    full_text_state = "idle",
+    full_text_entry_id = nil,
+    full_text_original = nil,
     on_prev_article = nil,
     on_next_article = nil,
     on_close_article = nil,
@@ -123,6 +126,7 @@ function QiArticleDetailWidget:init()
     }
 
     self.button_table = self:createButtonTable()
+    self:refreshFullTextButtonStyle()
     self.scroll_widget = self:createScrollWidget()
     self.content_frame = FrameContainer:new{
         padding = 0,
@@ -192,11 +196,14 @@ function QiArticleDetailWidget:getBottomButtons()
                 end,
             },
             {
-                id = "read_later",
-                text = QiArticleDetailWidget.getReadLaterButtonText(),
-                background = self:isReadLaterActive() and Blitbuffer.COLOR_LIGHT_GRAY or nil,
+                id = "full_text",
+                text = self:getFullTextButtonText(),
+                enabled = not self:isFullTextLoading(),
+                enabled_func = function()
+                    return not self:isFullTextLoading()
+                end,
                 callback = function()
-                    self:toggleReadLater()
+                    self:loadFullText()
                 end,
             },
             {
@@ -224,9 +231,16 @@ function QiArticleDetailWidget:refreshBottomButtons()
     self.button_table.buttons = self:getBottomButtons()
     self.button_table:free()
     self.button_table:init()
+    self:refreshFullTextButtonStyle()
 end
 
 function QiArticleDetailWidget:updateArticleDetail(entry, html, title, media_refs)
+    local current_entry_id = self.entry and self.entry.id or nil
+    local next_entry = entry or self.entry
+    local next_entry_id = next_entry and next_entry.id or nil
+    if current_entry_id ~= next_entry_id then
+        self:resetFullTextState(next_entry_id)
+    end
     self.entry = entry or self.entry
     self.html = html or self.html
     self.title = title or (entry and entry.title) or self.title
