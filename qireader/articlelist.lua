@@ -32,6 +32,90 @@ local ARTICLE_SEPARATOR_COLOR = Blitbuffer.COLOR_DARK_GRAY
 local ARTICLE_DIM_TEXT_COLOR = Blitbuffer.COLOR_GRAY_3
 local ARTICLE_ACTION_COLOR = Blitbuffer.COLOR_BLACK
 local ARTICLE_ACTION_DIM_COLOR = Blitbuffer.COLOR_DARK_GRAY
+local ARTICLE_ITEM_HORIZONTAL_PADDING = Size.padding.large
+local ARTICLE_ITEM_VERTICAL_PADDING = Size.padding.small
+local ARTICLE_ITEM_SUBTITLE_GAP = Size.padding.small
+local ARTICLE_ITEM_ACTION_GAP = Size.span.horizontal_default
+local ARTICLE_ITEM_MIN_CONTENT_WIDTH = 10
+local ARTICLE_BUTTON_MIN_HEIGHT = Screen:scaleBySize(24)
+local ARTICLE_BUTTON_MIN_WIDTH = Screen:scaleBySize(56)
+local ARTICLE_BUTTON_MAX_FONT_SIZE = 20
+local ARTICLE_BUTTON_MIN_FONT_SIZE = 12
+
+local function measureTextBoxLineHeight(face, line_height)
+    local probe = TextBoxWidget:new{
+        text = " ",
+        face = face,
+        width = Screen:scaleBySize(120),
+        height = Screen:scaleBySize(120),
+        height_adjust = true,
+        line_height = line_height,
+    }
+    local height = probe:getSize().h
+    probe:free()
+    return height
+end
+
+local function getButtonFontSizeForHeight(row_height, padding_v)
+    local button_font_size = TextWidget:getFontSizeToFitHeight(
+        "cfont",
+        math.max(ARTICLE_BUTTON_MIN_HEIGHT, row_height - padding_v * 2),
+        padding_v
+    )
+    return math.max(ARTICLE_BUTTON_MIN_FONT_SIZE, math.min(button_font_size, ARTICLE_BUTTON_MAX_FONT_SIZE))
+end
+
+local function getArticleRowMetrics(row_width, row_height, title_font_size)
+    local title_face = Font:getFace("smalltfont", title_font_size)
+    local subtitle_face = Font:getFace("x_smallinfofont")
+    local button_padding_v = Size.padding.small
+    local button_padding_h = Size.padding.default
+    local title_line_height = measureTextBoxLineHeight(title_face, 0.15)
+    local subtitle_height = measureTextBoxLineHeight(subtitle_face, 0.1)
+    local button_font_size = getButtonFontSizeForHeight(row_height, button_padding_v)
+    local action_width = math.max(ARTICLE_BUTTON_MIN_WIDTH, math.floor(row_width * 0.16))
+
+    return {
+        title_face = title_face,
+        subtitle_face = subtitle_face,
+        title_line_height = title_line_height,
+        subtitle_height = subtitle_height,
+        button_padding_v = button_padding_v,
+        button_padding_h = button_padding_h,
+        button_font_size = button_font_size,
+        action_width = action_width,
+        horizontal_padding = ARTICLE_ITEM_HORIZONTAL_PADDING,
+        vertical_padding = ARTICLE_ITEM_VERTICAL_PADDING,
+        subtitle_gap = ARTICLE_ITEM_SUBTITLE_GAP,
+        action_gap = ARTICLE_ITEM_ACTION_GAP,
+    }
+end
+
+local function getArticleButtonHeight(metrics)
+    local action_button = Button:new{
+        text = _("Later"),
+        width = metrics.action_width,
+        radius = Size.radius.button,
+        bordersize = Size.border.button,
+        padding_v = metrics.button_padding_v,
+        padding_h = metrics.button_padding_h,
+        text_font_size = metrics.button_font_size,
+        text_font_bold = false,
+    }
+    local action_button_height = action_button:getSize().h
+    action_button:free()
+    return action_button_height
+end
+
+local function canArticleRowFit(row_width, row_height, title_font_size)
+    local metrics = getArticleRowMetrics(row_width, row_height, title_font_size)
+    local text_block_height = row_height - metrics.vertical_padding * 2
+    local title_area_height = text_block_height - metrics.subtitle_gap - metrics.subtitle_height
+    if title_area_height < metrics.title_line_height then
+        return false
+    end
+    return row_height >= getArticleButtonHeight(metrics)
+end
 
 local QiArticleItemWidget = InputContainer:extend{
     width = nil,
@@ -60,49 +144,20 @@ end
 
 function QiArticleItemWidget:rebuild()
     local item = self.item
-    local title_face = Font:getFace("smalltfont", self.title_font_size)
-    local subtitle_face = Font:getFace("x_smallinfofont")
-    local button_padding_v = Size.padding.small
-    local button_padding_h = Size.padding.default
     local row_width = self.width
     local row_height = self.height
-    local horizontal_padding = Size.padding.large
-    local action_gap = Size.span.horizontal_default
-    local button_font_size = TextWidget:getFontSizeToFitHeight(
-        "cfont",
-        math.max(Screen:scaleBySize(24), row_height - button_padding_v * 2),
-        button_padding_v
-    )
-    button_font_size = math.max(12, math.min(button_font_size, 20))
-    local action_width = math.max(Screen:scaleBySize(56), math.floor(row_width * 0.16))
-    local title_probe = TextWidget:new{
-        text = " ",
-        face = title_face,
-    }
-    local subtitle_probe = TextWidget:new{
-        text = " ",
-        face = subtitle_face,
-    }
-    local title_line_height = title_probe:getSize().h
-    local subtitle_height = subtitle_probe:getSize().h
-    title_probe:free()
-    subtitle_probe:free()
-    local vertical_padding = Size.padding.small
-    local subtitle_gap = Size.padding.small
+    local metrics = getArticleRowMetrics(row_width, row_height, self.title_font_size)
     local text_color = item.status == 0 and Blitbuffer.COLOR_BLACK or ARTICLE_DIM_TEXT_COLOR
+    local subtitle_color = ARTICLE_DIM_TEXT_COLOR
     local action_color = item.is_read_later and ARTICLE_ACTION_DIM_COLOR or ARTICLE_ACTION_COLOR
-    local title_area_height = math.max(
-        title_line_height,
-        row_height - subtitle_height - subtitle_gap - vertical_padding * 2
-    )
     local action_button = Button:new{
         text = _("Later"),
-        width = action_width,
+        width = metrics.action_width,
         radius = Size.radius.button,
         bordersize = Size.border.button,
-        padding_v = button_padding_v,
-        padding_h = button_padding_h,
-        text_font_size = button_font_size,
+        padding_v = metrics.button_padding_v,
+        padding_h = metrics.button_padding_h,
+        text_font_size = metrics.button_font_size,
         text_font_bold = false,
         callback = function()
             if self.onToggleReadLater then
@@ -115,12 +170,18 @@ function QiArticleItemWidget:rebuild()
     action_button.frame.color = action_color
     local action_button_width = action_button:getSize().w
     local content_width = math.max(
-        10,
-        row_width - horizontal_padding * 2 - action_gap - action_button_width
+        ARTICLE_ITEM_MIN_CONTENT_WIDTH,
+        row_width - metrics.horizontal_padding * 2 - metrics.action_gap - action_button_width
+    )
+    local text_block_height = math.max(1, row_height - metrics.vertical_padding * 2)
+    local subtitle_area_height = metrics.subtitle_height
+    local title_area_height = math.max(
+        metrics.title_line_height,
+        text_block_height - metrics.subtitle_gap - subtitle_area_height
     )
     local title_widget = TextBoxWidget:new{
         text = item.title or _("Untitled"),
-        face = title_face,
+        face = metrics.title_face,
         width = content_width,
         height = title_area_height,
         height_adjust = true,
@@ -131,25 +192,38 @@ function QiArticleItemWidget:rebuild()
     }
     local subtitle_widget = TextBoxWidget:new{
         text = string.format("%s | %s", item.date_text or "", item.source_title or ""),
-        face = subtitle_face,
+        face = metrics.subtitle_face,
         width = content_width,
-        height = subtitle_height,
+        height = subtitle_area_height,
         height_adjust = true,
         line_height = 0.1,
         height_overflow_show_ellipsis = true,
         alignment = "left",
-        fgcolor = text_color,
+        fgcolor = subtitle_color,
     }
-
-    local text_stack = VerticalGroup:new{
-        align = "left",
+    local title_block = CenterContainer:new{
+        dimen = Geom:new{ w = content_width, h = title_area_height },
+        ignore_if_over = "height",
         title_widget,
-        VerticalSpan:new{ width = subtitle_gap },
+    }
+    local subtitle_block = LeftContainer:new{
+        dimen = Geom:new{ w = content_width, h = subtitle_area_height },
         subtitle_widget,
     }
+    local text_overlay = OverlapGroup:new{
+        dimen = Geom:new{ w = content_width, h = text_block_height },
+        allow_mirroring = false,
+        title_block,
+        VerticalGroup:new{
+            overlap_offset = { 0, title_area_height },
+            align = "left",
+            VerticalSpan:new{ width = metrics.subtitle_gap },
+            subtitle_block,
+        },
+    }
     local text_block = LeftContainer:new{
-        dimen = Geom:new{ w = content_width, h = row_height - vertical_padding * 2 },
-        text_stack,
+        dimen = Geom:new{ w = content_width, h = text_block_height },
+        text_overlay,
     }
     local action_block = CenterContainer:new{
         dimen = Geom:new{ w = action_button_width, h = row_height },
@@ -164,11 +238,11 @@ function QiArticleItemWidget:rebuild()
         background = Blitbuffer.COLOR_WHITE,
         HorizontalGroup:new{
             align = "center",
-            HorizontalSpan:new{ width = horizontal_padding },
+            HorizontalSpan:new{ width = metrics.horizontal_padding },
             text_block,
-            HorizontalSpan:new{ width = action_gap },
+            HorizontalSpan:new{ width = metrics.action_gap },
             action_block,
-            HorizontalSpan:new{ width = horizontal_padding },
+            HorizontalSpan:new{ width = metrics.horizontal_padding },
         },
     }
 end
@@ -295,12 +369,16 @@ function QiArticleListWidget:getPerPage()
     return self.controller:getArticleSetting(self.target, "items_per_page") or 5
 end
 
+function QiArticleListWidget:getEffectivePerPage()
+    return self.effective_per_page or math.max(1, self:getPerPage())
+end
+
 function QiArticleListWidget:getRemoteBatchSize()
     return self.remote_batch_size or 50
 end
 
 function QiArticleListWidget:getPagesPerChunk()
-    local per_page = math.max(1, self:getPerPage())
+    local per_page = math.max(1, self:getEffectivePerPage())
     local remote_batch = math.max(per_page, self:getRemoteBatchSize())
     return math.max(1, math.ceil(remote_batch / per_page))
 end
@@ -314,26 +392,44 @@ function QiArticleListWidget:getAvailableHeight()
 end
 
 function QiArticleListWidget:setupItemMetrics()
-    local per_page = math.max(1, self:getPerPage())
+    local requested_per_page = math.max(1, self:getPerPage())
     local content_height = math.max(0, self:getAvailableHeight())
-    local gap_count = math.max(0, per_page - 1)
-    local item_spacing = per_page > 1 and Size.padding.small or 0
-    local item_height
-    if gap_count > 0 then
-        item_height = math.floor((content_height - item_spacing * gap_count) / per_page)
-        if item_height < 1 then
-            item_spacing = 0
-            item_height = math.floor(content_height / per_page)
+    local item_width = self.dimen.w - Size.padding.large * 2
+    local effective_per_page = requested_per_page
+    local item_spacing = requested_per_page > 1 and Size.padding.small or 0
+    local item_height = 0
+
+    while effective_per_page > 1 do
+        local gap_count = math.max(0, effective_per_page - 1)
+        local spacing = effective_per_page > 1 and item_spacing or 0
+        local candidate_height = math.floor((content_height - spacing * gap_count) / effective_per_page)
+        if canArticleRowFit(item_width, candidate_height, self:getTitleFontSize()) then
+            item_height = candidate_height
+            item_spacing = spacing
+            break
         end
-    else
-        item_height = math.floor(content_height / per_page)
+        effective_per_page = effective_per_page - 1
     end
 
-    self.item_width = self.dimen.w - Size.padding.large * 2
+    if item_height < 1 then
+        effective_per_page = math.max(1, effective_per_page)
+        local gap_count = math.max(0, effective_per_page - 1)
+        item_spacing = effective_per_page > 1 and Size.padding.small or 0
+        item_height = math.floor((content_height - item_spacing * gap_count) / effective_per_page)
+        if item_height < 1 then
+            item_spacing = 0
+            item_height = math.floor(content_height / effective_per_page)
+        end
+    end
+
+    local gap_count = math.max(0, effective_per_page - 1)
+
+    self.item_width = item_width
     self.item_height = math.max(1, item_height)
     self.item_spacing = item_spacing
+    self.effective_per_page = effective_per_page
 
-    local used_height = self.item_height * per_page + self.item_spacing * gap_count
+    local used_height = self.item_height * effective_per_page + self.item_spacing * gap_count
     local remaining = math.max(0, content_height - used_height)
     self.item_top_spacing = math.floor(remaining / 2)
     self.item_bottom_spacing = remaining - self.item_top_spacing
@@ -366,7 +462,7 @@ function QiArticleListWidget:getChunkIndexForPage(page)
 end
 
 function QiArticleListWidget:getPageOffsetInChunk(page)
-    local per_page = math.max(1, self:getPerPage())
+    local per_page = math.max(1, self:getEffectivePerPage())
     local chunk_index = self:getChunkIndexForPage(page)
     local first_page = (chunk_index - 1) * self:getPagesPerChunk() + 1
     return (page - first_page) * per_page
@@ -378,7 +474,7 @@ function QiArticleListWidget:buildPageFromChunk(page)
     if not chunk then
         return nil
     end
-    local per_page = math.max(1, self:getPerPage())
+    local per_page = math.max(1, self:getEffectivePerPage())
     local start_index = self:getPageOffsetInChunk(page) + 1
     if start_index > #chunk.entries then
         return nil
@@ -399,6 +495,7 @@ function QiArticleListWidget:buildPageFromChunk(page)
 end
 
 function QiArticleListWidget:rebuildLoadedPages()
+    self:setupItemMetrics()
     self.loaded_pages = {}
     local page = 1
     while true do
@@ -743,89 +840,90 @@ end
 
 function QiArticleListWidget:showMenuDialog()
     local dialog
+    local buttons = {
+        {{
+            text = self.controller:getArticleSettingsScopeText(self.target),
+            callback = function()
+                UIManager:close(dialog)
+                self.controller:toggleArticleSettingsScope(self.target, self)
+            end,
+            align = "left",
+        }},
+        {{
+            text = self.controller:getArticleSetting(self.target, "show_unread_only")
+                and _("Unread only: On")
+                or _("Unread only: Off"),
+            callback = function()
+                UIManager:close(dialog)
+                self.controller:toggleArticleUnreadOnly(self.target, self)
+            end,
+            align = "left",
+        }},
+        {{
+            text = self.controller:getArticleSetting(self.target, "order_oldest_first")
+                and _("Oldest first: On")
+                or _("Oldest first: Off"),
+            callback = function()
+                UIManager:close(dialog)
+                self.controller:toggleArticleOrder(self.target, self)
+            end,
+            align = "left",
+        }},
+        {{
+            text = self.controller:getArticleSetting(self.target, "mark_read_on_page_turn")
+                and _("Mark on page turn: On")
+                or _("Mark on page turn: Off"),
+            callback = function()
+                UIManager:close(dialog)
+                self.controller:toggleMarkReadOnPageTurn(self.target, self)
+            end,
+            align = "left",
+        }},
+        {{
+            text = string.format(_("Items per page: %d"), self:getPerPage()),
+            callback = function()
+                UIManager:close(dialog)
+                self.controller:showArticleNumberPicker(
+                    self.target,
+                    self,
+                    "items_per_page",
+                    _("Items per page"),
+                    {
+                        value_min = 1,
+                        value_max = 20,
+                        default_value = 5,
+                        on_apply = function(widget)
+                            self.controller:refreshArticleWidgetLayout(widget)
+                        end,
+                    }
+                )
+            end,
+            align = "left",
+        }},
+    }
+    table.insert(buttons, {{
+        text = string.format(_("Title font size: %d"), self:getTitleFontSize()),
+        callback = function()
+            UIManager:close(dialog)
+            self.controller:showArticleNumberPicker(
+                self.target,
+                self,
+                "title_font_size",
+                _("Title font size"),
+                {
+                    value_min = 12,
+                    value_max = 48,
+                    default_value = 18,
+                    on_apply = function(widget)
+                        self.controller:refreshArticleWidgetLayout(widget)
+                    end,
+                }
+            )
+        end,
+        align = "left",
+    }})
     dialog = ButtonDialog:new{
-        buttons = {
-            {{
-                text = self.controller:getArticleSettingsScopeText(self.target),
-                callback = function()
-                    UIManager:close(dialog)
-                    self.controller:toggleArticleSettingsScope(self.target, self)
-                end,
-                align = "left",
-            }},
-            {{
-                text = self.controller:getArticleSetting(self.target, "show_unread_only")
-                    and _("Unread only: On")
-                    or _("Unread only: Off"),
-                callback = function()
-                    UIManager:close(dialog)
-                    self.controller:toggleArticleUnreadOnly(self.target, self)
-                end,
-                align = "left",
-            }},
-            {{
-                text = self.controller:getArticleSetting(self.target, "order_oldest_first")
-                    and _("Oldest first: On")
-                    or _("Oldest first: Off"),
-                callback = function()
-                    UIManager:close(dialog)
-                    self.controller:toggleArticleOrder(self.target, self)
-                end,
-                align = "left",
-            }},
-            {{
-                text = self.controller:getArticleSetting(self.target, "mark_read_on_page_turn")
-                    and _("Mark on page turn: On")
-                    or _("Mark on page turn: Off"),
-                callback = function()
-                    UIManager:close(dialog)
-                    self.controller:toggleMarkReadOnPageTurn(self.target, self)
-                end,
-                align = "left",
-            }},
-            {{
-                text = string.format(_("Items per page: %d"), self:getPerPage()),
-                callback = function()
-                    UIManager:close(dialog)
-                    self.controller:showArticleNumberPicker(
-                        self.target,
-                        self,
-                        "items_per_page",
-                        _("Items per page"),
-                        {
-                            value_min = 1,
-                            value_max = 20,
-                            default_value = 5,
-                            on_apply = function(widget)
-                                self.controller:refreshArticleWidgetLayout(widget)
-                            end,
-                        }
-                    )
-                end,
-                align = "left",
-            }},
-            {{
-                text = string.format(_("Title font size: %d"), self:getTitleFontSize()),
-                callback = function()
-                    UIManager:close(dialog)
-                    self.controller:showArticleNumberPicker(
-                        self.target,
-                        self,
-                        "title_font_size",
-                        _("Title font size"),
-                        {
-                            value_min = 12,
-                            value_max = 48,
-                            default_value = 18,
-                            on_apply = function(widget)
-                                self.controller:refreshArticleWidgetLayout(widget)
-                            end,
-                        }
-                    )
-                end,
-                align = "left",
-            }},
-        },
+        buttons = buttons,
         shrink_unneeded_width = true,
         anchor = function()
             return self.title_bar and self.title_bar.left_button and self.title_bar.left_button.image.dimen or nil
