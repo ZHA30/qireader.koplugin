@@ -214,7 +214,8 @@ function methods:login(email, password)
     end)
 end
 
-function methods:startSubscriptionsLoad(_options)
+function methods:startSubscriptionsLoad(options)
+    options = options or {}
     local token = self:nextJobToken("subscriptions")
     local subscriptions_job = self:createBackgroundRequest({
         method = "GET",
@@ -252,7 +253,8 @@ function methods:startSubscriptionsLoad(_options)
             self.state = "groups"
             self:showGroups(
                 subscriptions_response.json,
-                self:readCache(self:cacheKey("unread_counts"), self:getCacheTtl("unread_counts"), true)
+                self:readCache(self:cacheKey("unread_counts"), self:getCacheTtl("unread_counts"), true),
+                options
             )
             return
         end
@@ -287,7 +289,7 @@ function methods:startSubscriptionsLoad(_options)
                 )
             end
             self.state = "groups"
-            self:showGroups(subscriptions_response.json, unread_json)
+            self:showGroups(subscriptions_response.json, unread_json, options)
         end
 
         pollUnread()

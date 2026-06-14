@@ -502,6 +502,27 @@ function methods:onArticleListClosed(widget)
         self.article_detail_widget = nil
     end
     UIManager:close(widget)
+    UIManager:nextTick(function()
+        self:refreshSubscriptionsAfterArticleListClosed()
+    end)
+end
+
+function methods:refreshSubscriptionsAfterArticleListClosed()
+    if self.state == "closed" or not self.menu then
+        return
+    end
+    local had_local_changes = self.subscriptions_dirty == true
+    if had_local_changes then
+        self.subscriptions_dirty = false
+        self:refreshGroupsPage()
+    end
+    if had_local_changes or not self.settings.cookie or not NetworkMgr:isOnline() then
+        return
+    end
+    self:startSubscriptionsLoad({
+        silent = true,
+        refresh_existing = true,
+    })
 end
 
 function methods:onArticleDetailClosed(widget)
@@ -521,10 +542,12 @@ function methods:markPageRead(page)
         return false
     end
     local unread_ids = {}
+    local unread_entries = {}
     for i = 1, #page.entries do
         local entry = page.entries[i]
         if entry.status == 0 then
             table.insert(unread_ids, entry.id)
+            table.insert(unread_entries, entry)
         end
     end
     if #unread_ids == 0 then
@@ -533,6 +556,7 @@ function methods:markPageRead(page)
     for i = 1, #page.entries do
         page.entries[i].status = 1
     end
+    self:adjustSubscriptionUnreadCounts(unread_entries, -1)
     self:invalidateStreamCache()
     local job = self:createBackgroundRequest({
         method = "PUT",
@@ -628,6 +652,7 @@ function methods:applyArticleReadState(entry)
         changed = true
     end
     if changed then
+        self:adjustSubscriptionUnreadCounts({ entry }, -1)
         self:invalidateStreamCache()
     end
     return changed

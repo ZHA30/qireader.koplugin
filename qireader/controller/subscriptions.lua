@@ -85,14 +85,38 @@ local function groupSubscriptions(data, unread_by_subscription_id)
     }
 end
 
+local function findSubscriptionByEntry(controller, entry)
+    local target = entry and entry.target or nil
+    if target and target.subscription then
+        return target.subscription
+    end
+    local feed_id = entry and (entry.source_feed_id
+        or (entry.raw and entry.raw.origin and entry.raw.origin.feedId))
+    if feed_id == nil then
+        return nil
+    end
+    local subscriptions = controller.subscriptions or {}
+    for i = 1, #subscriptions do
+        local subscription = subscriptions[i]
+        if subscription.feedId == feed_id
+            or subscription.id == feed_id
+            or tostring(subscription.feedId) == tostring(feed_id)
+            or tostring(subscription.id) == tostring(feed_id) then
+            return subscription
+        end
+    end
+end
+
 local methods = {}
 
-function methods:showGroups(data, unread_data)
+function methods:showGroups(data, unread_data, options)
+    options = options or {}
     self.state = "groups"
     local grouped = groupSubscriptions(data, makeUnreadMap(unread_data))
     self.groups = grouped.groups
     self.ungrouped = grouped.ungrouped
     self.subscriptions = grouped.subscriptions
+    self.subscriptions_dirty = false
     local valid_groups = {}
     for i = 1, #self.groups do
         valid_groups[self.groups[i].id] = true
@@ -103,7 +127,51 @@ function methods:showGroups(data, unread_data)
         end
     end
     self.save_settings()
-    self:showGroupsPage()
+    if options.refresh_existing and self.menu then
+        self:refreshGroupsPage()
+    else
+        self:showGroupsPage()
+    end
+end
+
+function methods:recomputeGroupUnreadCounts()
+    local groups = self.groups or {}
+    for i = 1, #groups do
+        local group = groups[i]
+        local count = 0
+        local subscriptions = group.subscriptions or {}
+        for j = 1, #subscriptions do
+            count = count + (tonumber(subscriptions[j].unread_count) or 0)
+        end
+        group.unread_count = count
+    end
+end
+
+function methods:adjustSubscriptionUnreadCounts(entries, delta)
+    if not entries or #entries == 0 or not delta or delta == 0 then
+        return false
+    end
+    local counts_by_subscription = {}
+    for i = 1, #entries do
+        local subscription = findSubscriptionByEntry(self, entries[i])
+        if subscription then
+            counts_by_subscription[subscription] = (counts_by_subscription[subscription] or 0) + 1
+        end
+    end
+    local changed = false
+    for subscription, count in pairs(counts_by_subscription) do
+        local old_count = tonumber(subscription.unread_count) or 0
+        local new_count = math.max(0, old_count + delta * count)
+        if new_count ~= old_count then
+            subscription.unread_count = new_count
+            changed = true
+        end
+    end
+    if changed then
+        self:recomputeGroupUnreadCounts()
+        self.subscriptions_dirty = true
+    end
+    return changed
 end
 
 function methods:showGroupsFromCache()
