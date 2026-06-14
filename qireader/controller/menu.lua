@@ -297,6 +297,18 @@ function methods:showGroupsPage()
         onLeftButtonTap = function()
             self:showSettingsDialog()
         end,
+        onSwipe = function(menu, arg, ges_ev)
+            if ges_ev and ges_ev.direction == "south" then
+                if self.state == "loading"
+                    or self.pending_jobs.subscriptions
+                    or self.pending_jobs.unread_counts then
+                    return true
+                end
+                self:openHome()
+                return true
+            end
+            return Menu.onSwipe(menu, arg, ges_ev)
+        end,
     })
 end
 

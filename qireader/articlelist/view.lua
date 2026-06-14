@@ -281,6 +281,12 @@ function methods:onSwipe(_arg, ges)
         return self:nextPage()
     elseif ges.direction == "east" then
         return self:prevPage()
+    elseif ges.direction == "south" then
+        if self.loading or self.pending_request then
+            return true
+        end
+        self:reloadFromRemote()
+        return true
     end
     return false
 end
