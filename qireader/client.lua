@@ -127,4 +127,72 @@ function Client:getUnreadCounts()
     return self:request("GET", "/markers/unread/counts")
 end
 
+function Client:getTags()
+    return self:request("GET", "/tags")
+end
+
+function Client:getStream(stream_id, query)
+    return self:request("GET", "/streams/" .. tostring(stream_id), {
+        query = query,
+    })
+end
+
+function Client:getEntry(entry_id, stream_id)
+    return self:request("GET", "/entry/" .. tostring(entry_id), {
+        query = {
+            streamId = stream_id,
+        },
+    })
+end
+
+function Client:getEntryContents(stream_id, entry_ids)
+    return self:request("GET", "/entry-contents", {
+        query = {
+            streamId = stream_id,
+            entryIds = entry_ids,
+        },
+    })
+end
+
+function Client:markEntriesRead(entry_ids)
+    return self:request("PUT", "/markers/reads", {
+        body = {
+            type = "entries",
+            entryIds = entry_ids,
+        },
+    })
+end
+
+function Client:markEntryUnread(entry_id)
+    return self:request("PUT", "/markers/unread", {
+        body = {
+            entryId = entry_id,
+        },
+    })
+end
+
+function Client:addEntryTag(entry_id, tag_id, entry_type)
+    return self:request("PUT", "/entries/" .. tostring(entry_id) .. "/tags/" .. tostring(tag_id), {
+        body = {
+            entryType = entry_type or "feed",
+            entryId = entry_id,
+            tagId = tag_id,
+        },
+    })
+end
+
+function Client:removeEntryTag(entry_id, tag_id, entry_type)
+    entry_type = entry_type or "feed"
+    local path = "/entries/" .. tostring(entry_type)
+        .. "/" .. tostring(entry_id)
+        .. "/tags/" .. tostring(tag_id)
+    return self:request("DELETE", path, {
+        body = {
+            entryType = entry_type,
+            entryId = entry_id,
+            tagId = tag_id,
+        },
+    })
+end
+
 return Client

@@ -1140,7 +1140,7 @@ paths:
                   hasMore: true
         '400':
           description: Invalid id format
-      description: System category labels are not stream IDs. Use the category id whose label is !all; category-!all returns 400.
+      description: System category labels are not stream IDs. Use the category id whose label is !all; category-!all returns 400. Safe probes on 2026-06-14 observed valid reading streams for category-* and subscription-* ids. feed-* also returned entries for sampled subscriptions, but did not consistently preserve the same read status values as the corresponding subscription-* stream.
   "/entry/{entryId}":
     get:
       summary: Get entry metadata
@@ -1177,7 +1177,7 @@ paths:
                   tagIds: []
         '500':
           "$ref": "#/components/responses/InternalServerError"
-      description: Missing streamId returned 500 during probing.
+      description: Missing streamId returned 500 during probing. Safe probes on 2026-06-14 observed metadata fields including author, thumbnail, attachments, timestamp, and status, but not full article HTML.
   "/entry-contents":
     get:
       summary: Get entry contents
@@ -1210,7 +1210,7 @@ paths:
                   content: HTML content
         '500':
           "$ref": "#/components/responses/InternalServerError"
-      description: entryIds are encoded as repeated query keys. Forms using entryId or feedId returned 500 during probing.
+      description: entryIds are encoded as repeated query keys. Forms using singular entryId returned 500 during probing. Safe probes on 2026-06-14 returned HTML content for one and multiple repeated entryIds, and the observed response order matched the repeated-key request order.
   "/markers/reads":
     put:
       summary: Mark entries, category, or subscription as read
@@ -1302,6 +1302,7 @@ paths:
                   categoryPreferences: {}
                   tagPreferences: {}
                   pinnedItems: []
+      description: Safe probes on 2026-06-14 observed reading-related global preference keys including articleOrder, unreadOnly, markAsReadOnScroll, openInNewPage, entryListShowFeedIcon, entryListShowThumbnailOnMobile, entryListShowThumbnailOnDesktop, entryListSummaryLinesOnMobile, entryListSummaryLinesOnDesktop, articleViewWordWrap, and articleViewCustomCssEnabled.
   "/preferences/global":
     put:
       summary: Update global preferences

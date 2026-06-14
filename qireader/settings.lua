@@ -8,6 +8,11 @@ Settings.defaults = {
     user = nil,
     subscriptions_version = nil,
     show_unread_only = false,
+    article_show_unread_only = false,
+    article_order_oldest_first = false,
+    article_mark_read_on_page_turn = false,
+    article_items_per_page = 5,
+    article_title_font_size = 18,
 }
 
 local function cloneDefaults()

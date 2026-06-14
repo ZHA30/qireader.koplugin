@@ -1,18 +1,23 @@
+-- luacheck: globals G_reader_settings
+
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../i18n/po.lua")
 
 local Blitbuffer = require("ffi/blitbuffer")
+local QiArticleListWidget = require("qireader.articlelist")
 local Button = require("ui/widget/button")
 local ButtonDialog = require("ui/widget/buttondialog")
 local Client = require("qireader.client")
 local ConfirmBox = require("ui/widget/confirmbox")
 local Device = require("device")
 local InfoMessage = require("ui/widget/infomessage")
+local InputDialog = require("ui/widget/inputdialog")
 local Menu = require("ui/widget/menu")
 local MultiInputDialog = require("ui/widget/multiinputdialog")
 local NetworkMgr = require("ui/network/manager")
 local Settings = require("qireader.settings")
 local Size = require("ui/size")
 local UIManager = require("ui/uimanager")
+local util = require("util")
 local Screen = Device.screen
 
 local Controller = {}
@@ -135,11 +140,17 @@ function Controller.new(args)
         state = "closed",
         active_dialog = nil,
         login_dialog = nil,
+        article_widget = nil,
+        readlater_tag_id = nil,
     }, Controller)
 end
 
 function Controller:close()
     self.state = "closed"
+    if self.article_widget then
+        UIManager:close(self.article_widget)
+        self.article_widget = nil
+    end
     if self.active_dialog then
         UIManager:close(self.active_dialog)
         self.active_dialog = nil
@@ -149,6 +160,28 @@ function Controller:close()
         UIManager:close(self.menu)
         self.menu = nil
     end
+end
+
+function Controller:showTransientMessage(text)
+    self.last_message = text
+    UIManager:show(InfoMessage:new{
+        text = text,
+    })
+end
+
+function Controller:handleUnauthorized()
+    Settings.clearSession(self.settings)
+    self.save_settings()
+    self.groups = {}
+    self.ungrouped = {}
+    self.ungrouped_unread_count = 0
+    self.subscriptions = {}
+    if self.article_widget then
+        UIManager:close(self.article_widget)
+        self.article_widget = nil
+    end
+    self:showGroupsPage()
+    self:showTransientMessage(_("Session expired. Please log in again from Account."))
 end
 
 function Controller:open()
@@ -400,7 +433,25 @@ function Controller:showMenu(title, items, subtitle, options)
 end
 
 function Controller:openArticles(row)
-    self.pending_article_target = row
+    if not row then
+        return
+    end
+    self:ensureReadLaterTagId()
+    local target = self:buildArticleTarget(row)
+    if not target then
+        self:showTransientMessage(_("Cannot open article list."))
+        return
+    end
+    if self.article_widget then
+        UIManager:close(self.article_widget)
+        self.article_widget = nil
+    end
+    self.article_widget = QiArticleListWidget:new{
+        controller = self,
+        title = target.title,
+        target = target,
+    }
+    UIManager:show(self.article_widget)
 end
 
 function Controller:isUnreadOnly()
@@ -471,6 +522,282 @@ function Controller:showAccountDialog()
         self:confirmLogout()
     else
         self:showLoginDialog()
+    end
+end
+
+function Controller:ensureReadLaterTagId()
+    if self.readlater_tag_id then
+        return self.readlater_tag_id
+    end
+    local response = self.client:getTags()
+    if response.code ~= 200 or not response.json or not response.json.result then
+        return nil
+    end
+    local tags = response.json.result.tags or {}
+    for i = 1, #tags do
+        local tag = tags[i]
+        if tag.label == "!readlater" then
+            self.readlater_tag_id = tag.id
+            return self.readlater_tag_id
+        end
+    end
+    return nil
+end
+
+function Controller.buildArticleTarget(_, row)
+    if row.type == "group" and row.group then
+        local group = row.group
+        local stream_id
+        if group.is_all then
+            stream_id = "category-" .. tostring(group.id)
+        else
+            stream_id = "category-" .. tostring(group.id)
+        end
+        return {
+            kind = "group",
+            title = group.is_all and _("All") or (group.label or _("Untitled")),
+            stream_id = stream_id,
+            group = group,
+        }
+    elseif row.type == "subscription" and row.subscription then
+        local subscription = row.subscription
+        return {
+            kind = "subscription",
+            title = subscription.title or subscription.feedUrl or tostring(subscription.id or ""),
+            stream_id = "subscription-" .. tostring(subscription.id),
+            subscription = subscription,
+            group = row.group,
+        }
+    end
+end
+
+function Controller:getSubscriptionTitleByFeedId(feed_id)
+    local subscriptions = self.subscriptions or {}
+    for i = 1, #subscriptions do
+        local subscription = subscriptions[i]
+        if subscription.feedId == feed_id or subscription.id == feed_id then
+            return subscription.title or subscription.feedUrl or tostring(subscription.id or "")
+        end
+    end
+    return tostring(feed_id or "")
+end
+
+function Controller:normalizeArticlePage(target, result)
+    local entries = result.entries or {}
+    local normalized = {
+        entries = {},
+        has_more = result.hasMore == true,
+        next_cursor = nil,
+    }
+    local readlater_tag_id = self.readlater_tag_id
+    for i = 1, #entries do
+        local entry = entries[i]
+        local tag_ids = entry.tagIds or {}
+        local is_read_later = false
+        if readlater_tag_id then
+            for j = 1, #tag_ids do
+                if tag_ids[j] == readlater_tag_id then
+                    is_read_later = true
+                    break
+                end
+            end
+        end
+        table.insert(normalized.entries, {
+            id = entry.id,
+            title = entry.title or _("Untitled"),
+            status = entry.status or 0,
+            timestamp = entry.timestamp,
+            published_at = entry.publishedAt,
+            summary = entry.summary,
+            source_feed_id = entry.origin and entry.origin.feedId or nil,
+            source_title = self:getSubscriptionTitleByFeedId(entry.origin and entry.origin.feedId or nil),
+            date_text = self:formatArticleDate(entry.publishedAt),
+            tag_ids = tag_ids,
+            is_read_later = is_read_later,
+            raw = entry,
+            target = target,
+        })
+    end
+    if #entries > 0 then
+        normalized.next_cursor = entries[#entries].timestamp
+    end
+    return normalized
+end
+
+function Controller.formatArticleDate(_, published_at)
+    if not published_at then
+        return "--"
+    end
+    local seconds = tonumber(published_at) and math.floor(tonumber(published_at) / 1000) or nil
+    if not seconds then
+        return "--"
+    end
+    return os.date("%m-%d", seconds)
+end
+
+function Controller:onArticleListClosed(widget)
+    if self.article_widget == widget then
+        self.article_widget = nil
+    end
+    UIManager:close(widget)
+end
+
+function Controller:refreshArticleWidget(widget)
+    if self.article_widget and not widget then
+        widget = self.article_widget
+    end
+    if widget and widget.reloadFromFirstPage then
+        widget:reloadFromFirstPage()
+    end
+end
+
+function Controller:toggleArticleUnreadOnly(widget)
+    self.settings.article_show_unread_only = not self.settings.article_show_unread_only
+    self.save_settings()
+    self:refreshArticleWidget(widget)
+end
+
+function Controller:toggleArticleOrder(widget)
+    self.settings.article_order_oldest_first = not self.settings.article_order_oldest_first
+    self.save_settings()
+    self:refreshArticleWidget(widget)
+end
+
+function Controller:toggleMarkReadOnPageTurn(widget)
+    self.settings.article_mark_read_on_page_turn = not self.settings.article_mark_read_on_page_turn
+    self.save_settings()
+    if widget then
+        widget:refresh()
+    end
+end
+
+function Controller:showArticleNumberInput(widget, setting_key, title, current_value)
+    local dialog
+    dialog = InputDialog:new{
+        title = title,
+        input = tostring(current_value or ""),
+        input_type = "number",
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(dialog)
+                    end,
+                },
+                {
+                    text = _("OK"),
+                    callback = function()
+                        local value = dialog:getInputValue()
+                        if not value then
+                            self:showTransientMessage(_("Invalid number."))
+                            return
+                        end
+                        if setting_key == "article_items_per_page" then
+                            value = math.max(1, math.min(20, math.floor(value)))
+                        else
+                            value = math.max(12, math.min(48, math.floor(value)))
+                        end
+                        self.settings[setting_key] = value
+                        self.save_settings()
+                        UIManager:close(dialog)
+                        self:refreshArticleWidget(widget)
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+function Controller:markPageRead(page)
+    if not page or not page.entries or #page.entries == 0 then
+        return
+    end
+    local unread_ids = {}
+    for i = 1, #page.entries do
+        local entry = page.entries[i]
+        if entry.status == 0 then
+            table.insert(unread_ids, entry.id)
+        end
+    end
+    if #unread_ids == 0 then
+        return
+    end
+    local response = self.client:markEntriesRead(unread_ids)
+    if response.code ~= 200 then
+        return
+    end
+    for i = 1, #page.entries do
+        page.entries[i].status = 1
+    end
+end
+
+function Controller:maybeMarkArticlePageRead(widget)
+    if not widget or not self.settings.article_mark_read_on_page_turn then
+        return
+    end
+    local page = widget.loaded_pages and widget.loaded_pages[widget.show_page] or nil
+    if page then
+        self:markPageRead(page)
+    end
+end
+
+function Controller:toggleReadLater(entry, widget)
+    local tag_id = self:ensureReadLaterTagId()
+    if not tag_id then
+        self:showTransientMessage(_("Cannot resolve read-later tag."))
+        return
+    end
+    local response
+    if entry.is_read_later then
+        response = self.client:removeEntryTag(entry.id, tag_id, "feed")
+    else
+        response = self.client:addEntryTag(entry.id, tag_id, "feed")
+    end
+    if response.code == 401 then
+        self:handleUnauthorized()
+        return
+    end
+    if response.code ~= 200 then
+        self:showTransientMessage(_("Cannot update read-later state."))
+        return
+    end
+    entry.is_read_later = not entry.is_read_later
+    if entry.is_read_later then
+        table.insert(entry.tag_ids, tag_id)
+    else
+        local filtered = {}
+        for i = 1, #entry.tag_ids do
+            if entry.tag_ids[i] ~= tag_id then
+                table.insert(filtered, entry.tag_ids[i])
+            end
+        end
+        entry.tag_ids = filtered
+    end
+    if widget then
+        widget:refresh()
+    end
+end
+
+function Controller:openArticleContent(target, entry)
+    local response = self.client:getEntryContents(target.stream_id, { entry.id })
+    if response.code == 401 then
+        self:handleUnauthorized()
+        return
+    end
+    if response.code ~= 200 or not response.json or not response.json.result or not response.json.result[1] then
+        self:showTransientMessage(_("Cannot load article content."))
+        return
+    end
+    local content = response.json.result[1].content or entry.summary or ""
+    if self.article_widget then
+        self.article_widget:showText(entry.title, content)
+    else
+        UIManager:show(InfoMessage:new{
+            text = util.htmlToPlainTextIfHtml(content),
+        })
     end
 end
 
