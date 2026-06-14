@@ -90,6 +90,18 @@ local function escapeHtml(text)
     return util.htmlEscape(text or "")
 end
 
+local function isMeaningfulPlaceholderText(text)
+    text = trim(text)
+    if text == "" then
+        return false
+    end
+    -- Ignore broken alt/title payloads that collapse to punctuation only.
+    if text:match('^[%s"\'`´“”‘’.,:;!%?%-%[%]%(%){}_/\\|<>~@#$%^&*+=]+$') then
+        return false
+    end
+    return true
+end
+
 local function getAttr(attrs, name)
     if not attrs or not name then
         return nil
@@ -118,7 +130,7 @@ local function buildMediaPlaceholder(tag, attrs, body)
     local text
     for i = 1, #candidates do
         local candidate = stripTags(candidates[i])
-        if candidate ~= "" then
+        if isMeaningfulPlaceholderText(candidate) then
             text = candidate
             break
         end
