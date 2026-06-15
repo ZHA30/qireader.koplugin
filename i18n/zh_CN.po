@@ -37,6 +37,9 @@ msgstr "会话已过期，请从“账号”重新登录。"
 msgid "Cannot load subscriptions: "
 msgstr "无法加载订阅："
 
+msgid "Error"
+msgstr "错误"
+
 msgid "No response"
 msgstr "无响应"
 
@@ -204,3 +207,6 @@ msgstr "数字无效。"
 
 msgid "Loading"
 msgstr "加载中"
+
+msgid "Empty"
+msgstr "空"

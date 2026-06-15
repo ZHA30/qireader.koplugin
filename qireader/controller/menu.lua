@@ -5,31 +5,82 @@ local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../
 local Blitbuffer = require("ffi/blitbuffer")
 local Button = require("ui/widget/button")
 local ButtonDialog = require("ui/widget/buttondialog")
+local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
+local Font = require("ui/font")
+local Geom = require("ui/geometry")
 local Menu = require("ui/widget/menu")
 local QiArticleListWidget = require("qireader.articlelist")
 local Size = require("ui/size")
+local TextWidget = require("ui/widget/textwidget")
 local UIManager = require("ui/uimanager")
+local VerticalSpan = require("ui/widget/verticalspan")
 local Screen = Device.screen
 
 local methods = {}
 
-function methods:showLoading(text)
-    self:showMenu(_("QiReader"), {
-        {
-            text = text,
-            select_enabled = false,
+function methods:setGroupsPlaceholderState(state, text)
+    self.groups_placeholder_state = state
+    self.groups_placeholder_text = text
+end
+
+function methods:clearGroupsPlaceholderState()
+    self.groups_placeholder_state = nil
+    self.groups_placeholder_text = nil
+end
+
+function methods:getGroupsPlaceholderText()
+    if self.groups_placeholder_text then
+        return self.groups_placeholder_text
+    end
+    if self.groups_placeholder_state == "loading" then
+        return _("Loading")
+    end
+    if self.groups_placeholder_state == "error" then
+        return _("Error")
+    end
+    return _("Empty")
+end
+
+function methods:updateGroupsPlaceholder()
+    if not self.menu then
+        return
+    end
+    local items = self.menu.item_table or {}
+    local should_show_placeholder = self.state == "loading" or #items == 0
+    if not should_show_placeholder then
+        return
+    end
+    self.menu.item_group:clear()
+    table.insert(self.menu.item_group, VerticalSpan:new{ width = Size.padding.large })
+    table.insert(self.menu.item_group, CenterContainer:new{
+        dimen = Geom:new{
+            w = self.menu.inner_dimen.w,
+            h = self.menu.available_height or self.menu.item_dimen.h,
         },
+        TextWidget:new{
+            text = self:getGroupsPlaceholderText(),
+            face = Font:getFace("smallinfofontbold"),
+            fgcolor = Blitbuffer.COLOR_DARK_GRAY,
+        },
+    })
+    self.menu.content_group:resetLayout()
+    UIManager:setDirty(self.menu.show_parent, function()
+        return "ui", self.menu.dimen
+    end)
+end
+
+function methods:showLoading(text)
+    self.state = "loading"
+    self:setGroupsPlaceholderState("loading", text)
+    self:showMenu(_("QiReader"), {
     }, _("Loading"))
 end
 
 function methods:showError(text, retry_callback)
     self.state = "error"
+    self:setGroupsPlaceholderState("error", text)
     self:showMenu(_("QiReader"), {
-        {
-            text = text,
-            select_enabled = false,
-        },
         {
             text = _("Back"),
             callback = retry_callback or function()
@@ -54,6 +105,7 @@ function methods:showMenu(title, items, subtitle, options)
             on_left_button_tap()
         end
         self.menu:switchItemTable(title, items, 1, nil, subtitle or "")
+        self:updateGroupsPlaceholder()
         return
     end
     local menu_options = {
@@ -87,6 +139,7 @@ function methods:showMenu(title, items, subtitle, options)
     end
     self.menu = Menu:new(menu_options)
     UIManager:show(self.menu)
+    self:updateGroupsPlaceholder()
 end
 
 function methods:openArticles(row)
@@ -272,12 +325,6 @@ function methods:buildGroupsPageItems()
         end
     end
 
-    if #items == 0 and self.settings.cookie then
-        table.insert(items, {
-            text = self:isUnreadOnly() and _("No unread subscriptions.") or _("No subscriptions."),
-            select_enabled = false,
-        })
-    end
     return items
 end
 

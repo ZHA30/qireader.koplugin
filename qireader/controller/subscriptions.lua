@@ -112,6 +112,9 @@ local methods = {}
 function methods:showGroups(data, unread_data, options)
     options = options or {}
     self.state = "groups"
+    if self.clearGroupsPlaceholderState then
+        self:clearGroupsPlaceholderState()
+    end
     local grouped = groupSubscriptions(data, makeUnreadMap(unread_data))
     self.groups = grouped.groups
     self.ungrouped = grouped.ungrouped

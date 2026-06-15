@@ -191,12 +191,14 @@ function methods:refreshItems()
     local page = self.loaded_pages[self.show_page]
     local item_height = self.item_height
     if not page or #page.entries == 0 then
-        table.insert(self.items_group, VerticalSpan:new{ width = Size.padding.large })
         table.insert(self.items_group, CenterContainer:new{
-            dimen = Geom:new{ w = self.dimen.w, h = item_height },
+            dimen = Geom:new{
+                w = self.dimen.w,
+                h = self.dimen.h - self.title_bar:getHeight() - self.footer_height,
+            },
             TextWidget:new{
-                text = self.loading and _("Loading...") or _("No articles."),
-                face = Font:getFace("x_smallinfofont"),
+                text = self.loading and _("Loading") or _("Empty"),
+                face = Font:getFace("smallinfofontbold"),
                 fgcolor = Blitbuffer.COLOR_DARK_GRAY,
             },
         })

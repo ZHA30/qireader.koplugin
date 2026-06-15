@@ -574,6 +574,13 @@ function methods:refreshSubscriptionsAfterArticleListClosed()
     if had_local_changes or not self.settings.cookie or not NetworkMgr:isOnline() then
         return
     end
+    self.state = "loading"
+    if self.setGroupsPlaceholderState then
+        self:setGroupsPlaceholderState("loading", _("Loading"))
+    end
+    if self.updateGroupsPlaceholder then
+        self:updateGroupsPlaceholder()
+    end
     self:startSubscriptionsLoad({
         silent = true,
         refresh_existing = true,
