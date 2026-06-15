@@ -34,6 +34,34 @@ local ARTICLE_BUTTON_MIN_WIDTH = Screen:scaleBySize(56)
 local ARTICLE_BUTTON_MAX_FONT_SIZE = 20
 local ARTICLE_BUTTON_MIN_FONT_SIZE = 12
 
+local ArticleContentTapArea = InputContainer:extend{
+    width = nil,
+    height = nil,
+    callback = nil,
+}
+
+function ArticleContentTapArea:init()
+    self.dimen = Geom:new{
+        w = self.width,
+        h = self.height,
+    }
+    self.ges_events = {
+        TapOpenArticle = {
+            GestureRange:new{
+                ges = "tap",
+                range = self.dimen,
+            },
+        },
+    }
+end
+
+function ArticleContentTapArea:onTapOpenArticle()
+    if self.callback then
+        self.callback()
+    end
+    return true
+end
+
 local function measureTextBoxLineHeight(face, line_height)
     local probe = TextBoxWidget:new{
         text = " ",
@@ -123,14 +151,6 @@ function QiArticleItemWidget:init()
         w = self.width,
         h = self.height,
     }
-    self.ges_events = {
-        Tap = {
-            GestureRange:new{
-                ges = "tap",
-                range = self.dimen,
-            },
-        },
-    }
     self:rebuild()
 end
 
@@ -213,9 +233,22 @@ function QiArticleItemWidget:rebuild()
             subtitle_block,
         },
     }
-    local text_block = LeftContainer:new{
+    local text_content = LeftContainer:new{
         dimen = Geom:new{ w = content_width, h = text_block_height },
         text_overlay,
+    }
+    local text_block = ArticleContentTapArea:new{
+        width = content_width,
+        height = row_height,
+        callback = function()
+            if self.onOpenArticle then
+                self.onOpenArticle(item)
+            end
+        end,
+        CenterContainer:new{
+            dimen = Geom:new{ w = content_width, h = row_height },
+            text_content,
+        },
     }
     local action_block = CenterContainer:new{
         dimen = Geom:new{ w = action_button_width, h = row_height },
@@ -237,13 +270,6 @@ function QiArticleItemWidget:rebuild()
             HorizontalSpan:new{ width = metrics.horizontal_padding },
         },
     }
-end
-
-function QiArticleItemWidget:onTap()
-    if self.onOpenArticle then
-        self.onOpenArticle(self.item)
-    end
-    return true
 end
 
 return {
