@@ -139,7 +139,7 @@ local ArticleBottomBar = InputContainer:extend{
 function ArticleBottomBar:init()
     local button_height = Screen:scaleBySize(40)
     local sep_width = Size.line.medium
-    local button_width = math.floor((self.width - sep_width * 3) / 4)
+    local button_width = math.floor((self.width - sep_width * 4) / 5)
 
     self.prev_button = PluginIconButton:new{
         width = button_width,
@@ -153,21 +153,6 @@ function ArticleBottomBar:init()
         end,
         callback = function()
             self.owner:goToPrevArticle()
-        end,
-        show_parent = self.show_parent,
-    }
-    self.next_button = PluginIconButton:new{
-        width = button_width,
-        height = button_height,
-        icon_name = "article-next",
-        disabled_icon_name = "article-next-disabled",
-        icon_width = DETAIL_ACTION_ICON_SIZE,
-        icon_height = DETAIL_ACTION_ICON_SIZE,
-        enabled_func = function()
-            return self.owner:canGoNextArticle()
-        end,
-        callback = function()
-            self.owner:goToNextArticle()
         end,
         show_parent = self.show_parent,
     }
@@ -192,6 +177,38 @@ function ArticleBottomBar:init()
         end,
         width = button_width,
         height = button_height,
+        show_parent = self.show_parent,
+    }
+    local read_later_icon_state = nil
+    if self.owner:isReadLaterActive() then
+        read_later_icon_state = "active"
+    end
+    self.read_later_button = PluginIconButton:new{
+        icon_name = "read-later",
+        icon_state = read_later_icon_state,
+        disabled_icon_name = "read-later",
+        icon_width = DETAIL_ACTION_ICON_SIZE,
+        icon_height = DETAIL_ACTION_ICON_SIZE,
+        callback = function()
+            self.owner:toggleReadLater()
+        end,
+        width = button_width,
+        height = button_height,
+        show_parent = self.show_parent,
+    }
+    self.next_button = PluginIconButton:new{
+        width = button_width,
+        height = button_height,
+        icon_name = "article-next",
+        disabled_icon_name = "article-next-disabled",
+        icon_width = DETAIL_ACTION_ICON_SIZE,
+        icon_height = DETAIL_ACTION_ICON_SIZE,
+        enabled_func = function()
+            return self.owner:canGoNextArticle()
+        end,
+        callback = function()
+            self.owner:goToNextArticle()
+        end,
         show_parent = self.show_parent,
     }
     self.close_button = PluginIconButton:new{
@@ -220,9 +237,11 @@ function ArticleBottomBar:init()
         align = "center",
         self.prev_button,
         vertical_sep(row_height),
-        self.next_button,
-        vertical_sep(row_height),
         self.full_text_button,
+        vertical_sep(row_height),
+        self.read_later_button,
+        vertical_sep(row_height),
+        self.next_button,
         vertical_sep(row_height),
         self.close_button,
     }
@@ -250,6 +269,8 @@ end
 function ArticleBottomBar:getButtonById(id)
     if id == "full_text" then
         return self.full_text_button
+    elseif id == "read_later" then
+        return self.read_later_button
     end
     return nil
 end
