@@ -352,7 +352,7 @@ function methods:showGroupsPage()
                     or self.pending_jobs.unread_counts then
                     return true
                 end
-                self:openHome()
+                self:openHome({ force_loading = true })
                 return true
             end
             return Menu.onSwipe(menu, arg, ges_ev)

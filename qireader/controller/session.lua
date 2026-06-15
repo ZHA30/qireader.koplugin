@@ -82,7 +82,7 @@ function methods:handleUnauthorized()
 end
 
 function methods:open()
-    self:openHome()
+    self:openHome({ force_loading = true })
 end
 
 function methods:closeActiveDialog()
@@ -329,7 +329,8 @@ function methods:startSubscriptionsLoad(options)
     pollSubscriptions()
 end
 
-function methods:openHome()
+function methods:openHome(options)
+    options = options or {}
     if not self.settings.cookie then
         self:showGroupsFromCache()
         return
@@ -338,11 +339,13 @@ function methods:openHome()
     if not NetworkMgr:isOnline() then
         return
     end
-    if not has_cache then
+    if options.force_loading or not has_cache then
         self.state = "loading"
-        self:showLoading(_("Loading subscriptions..."))
+        self:showLoading(_("Loading"))
     end
-    self:startSubscriptionsLoad({ silent = has_cache })
+    self:startSubscriptionsLoad({
+        silent = (not options.force_loading) and has_cache,
+    })
 end
 
 return methods
