@@ -9,15 +9,53 @@ local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local Font = require("ui/font")
 local Geom = require("ui/geometry")
+local InputContainer = require("ui/widget/container/inputcontainer")
 local Menu = require("ui/widget/menu")
 local QiArticleListWidget = require("qireader.articlelist")
+local Icons = require("qireader.icons")
 local Size = require("ui/size")
 local TextWidget = require("ui/widget/textwidget")
 local UIManager = require("ui/uimanager")
 local VerticalSpan = require("ui/widget/verticalspan")
 local Screen = Device.screen
+local MENU_STATE_ICON_SIZE = Icons.size.menu
 
 local methods = {}
+
+local AllStateIcon = InputContainer:extend{
+    width = nil,
+    height = nil,
+}
+
+function AllStateIcon:init()
+    self.icon = Icons.widget("all", { size = MENU_STATE_ICON_SIZE })
+    self[1] = CenterContainer:new{
+        dimen = Geom:new{
+            w = self.width,
+            h = self.height,
+        },
+        self.icon,
+    }
+    self.dimen = self[1]:getSize()
+end
+
+local GroupStateIcon = InputContainer:extend{
+    width = nil,
+    height = nil,
+    icon_name = "group-collapsed",
+}
+
+function GroupStateIcon:init()
+    self.icon = Icons.widget(self.icon_name, { size = MENU_STATE_ICON_SIZE })
+    self[1] = CenterContainer:new{
+        dimen = Geom:new{
+            w = self.width,
+            h = self.height,
+        },
+        self.icon,
+    }
+    self.dimen = self[1]:getSize()
+end
 
 function methods:setGroupsPlaceholderState(state, text)
     self.groups_placeholder_state = state
@@ -262,6 +300,21 @@ function methods:buildGroupsPageItems()
         }
     end
 
+    local function makeAllStateIcon()
+        return AllStateIcon:new{
+            width = button_width,
+            height = Screen:scaleBySize(math.max(24, state_font_size + 8)),
+        }
+    end
+
+    local function makeGroupStateIcon(is_expanded)
+        return GroupStateIcon:new{
+            width = button_width,
+            height = Screen:scaleBySize(math.max(24, state_font_size + 8)),
+            icon_name = is_expanded and "group-expanded" or "group-collapsed",
+        }
+    end
+
     for i = 1, #groups do
         local group = groups[i]
         local visible_subscriptions = {}
@@ -276,7 +329,7 @@ function methods:buildGroupsPageItems()
             table.insert(items, {
                 text = group.is_all and _("All") or group.label or _("Untitled"),
                 mandatory = tostring(group.unread_count or 0),
-                state = group.is_all and makeStateButton("") or makeStateButton(is_expanded and "▼" or "▶"),
+                state = group.is_all and makeAllStateIcon() or makeGroupStateIcon(is_expanded),
                 bold = true,
                 dim = (group.unread_count or 0) == 0,
                 group = group,

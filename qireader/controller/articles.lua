@@ -768,6 +768,78 @@ function methods:markArticleRead(entry)
     poll()
 end
 
+function methods:markArticleUnread(entry)
+    if not NetworkMgr:isOnline() or not entry or not entry.id or entry.status == 0 then
+        return
+    end
+
+    entry.status = 0
+    if self.article_widget and not self.article_widget.closing then
+        self.article_widget:refresh()
+    end
+    if self.article_detail_widget
+        and self.article_detail_widget.entry
+        and self.article_detail_widget.entry.id == entry.id then
+        self.article_detail_widget.entry.status = 0
+    end
+    self:adjustSubscriptionUnreadCounts({ entry }, 1)
+    self:invalidateStreamCache()
+
+    local job_key = READ_MARK_JOB_PREFIX .. tostring(entry.id) .. ":unread"
+    local job_token = self:nextJobToken(job_key)
+    local job = self:createBackgroundRequest({
+        method = "DELETE",
+        path = "/markers/reads",
+        body = {
+            type = "entries",
+            entryIds = { entry.id },
+        },
+    })
+    if not job then
+        return
+    end
+    self:registerPendingJob(job_key, job)
+    local function poll()
+        if self.state == "closed"
+            or not self:isJobTokenCurrent(job_key, job_token)
+            or self.pending_jobs[job_key] ~= job then
+            self:cancelPendingJob(job_key, job)
+            return
+        end
+        local done, response, err = job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, poll)
+            return
+        end
+        self:clearPendingJob(job_key, job)
+        if err == "cancelled" then
+            return
+        end
+        if self.state == "closed" or not self:isJobTokenCurrent(job_key, job_token) then
+            return
+        end
+        self:applyResponseSession(response)
+        if response and response.code == 401 then
+            self:handleUnauthorized()
+        end
+    end
+    poll()
+end
+
+function methods:toggleArticleReadState(entry)
+    if not NetworkMgr:isOnline() then
+        return
+    end
+    if not entry then
+        return
+    end
+    if entry.status == 0 then
+        self:markArticleRead(entry)
+    else
+        self:markArticleUnread(entry)
+    end
+end
+
 function methods:toggleReadLater(entry, widget)
     if not NetworkMgr:isOnline() then
         self:showTransientMessage(_("Cannot update read-later state."))

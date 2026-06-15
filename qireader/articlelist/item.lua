@@ -13,6 +13,7 @@ local HorizontalSpan = require("ui/widget/horizontalspan")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local LeftContainer = require("ui/widget/container/leftcontainer")
 local OverlapGroup = require("ui/widget/overlapgroup")
+local Icons = require("qireader.icons")
 local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
@@ -22,17 +23,16 @@ local Screen = Device.screen
 
 local ARTICLE_SEPARATOR_COLOR = Blitbuffer.COLOR_DARK_GRAY
 local ARTICLE_DIM_TEXT_COLOR = Blitbuffer.COLOR_GRAY_3
-local ARTICLE_ACTION_COLOR = Blitbuffer.COLOR_BLACK
-local ARTICLE_ACTION_DIM_COLOR = Blitbuffer.COLOR_DARK_GRAY
 local ARTICLE_ITEM_HORIZONTAL_PADDING = Size.padding.large
 local ARTICLE_ITEM_VERTICAL_PADDING = Size.padding.small
 local ARTICLE_ITEM_SUBTITLE_GAP = Size.padding.small
 local ARTICLE_ITEM_ACTION_GAP = Size.span.horizontal_default
 local ARTICLE_ITEM_MIN_CONTENT_WIDTH = 10
 local ARTICLE_BUTTON_MIN_HEIGHT = Screen:scaleBySize(24)
-local ARTICLE_BUTTON_MIN_WIDTH = Screen:scaleBySize(56)
+local ARTICLE_STATUS_MIN_WIDTH = Screen:scaleBySize(20)
 local ARTICLE_BUTTON_MAX_FONT_SIZE = 20
 local ARTICLE_BUTTON_MIN_FONT_SIZE = 12
+local ARTICLE_ICON_SIZE = Icons.size.list
 
 local ArticleContentTapArea = InputContainer:extend{
     width = nil,
@@ -53,6 +53,83 @@ function ArticleContentTapArea:init()
             },
         },
     }
+end
+
+local ArticleActionIconButton = InputContainer:extend{
+    width = nil,
+    height = nil,
+    callback = nil,
+    icon_name = "read-later",
+    icon_state = nil,
+    background_color = Blitbuffer.COLOR_WHITE,
+}
+
+function ArticleActionIconButton:init()
+    self.icon = Icons.widget(self.icon_name, {
+        state = self.icon_state,
+        size = ARTICLE_ICON_SIZE,
+    })
+    self.frame = FrameContainer:new{
+        width = self.width,
+        height = self.height,
+        padding = 0,
+        margin = 0,
+        radius = Size.radius.button,
+        bordersize = 0,
+        background = self.background_color,
+        CenterContainer:new{
+            dimen = Geom:new{ w = self.width, h = self.height },
+            self.icon,
+        },
+    }
+    self[1] = self.frame
+    self.dimen = self.frame:getSize()
+    self.ges_events = {
+        TapSelectAction = {
+            GestureRange:new{
+                ges = "tap",
+                range = self.dimen,
+            },
+        },
+    }
+end
+
+function ArticleActionIconButton:onTapSelectAction()
+    if self.callback then
+        self.callback()
+    end
+    return true
+end
+
+local ArticleStatusIcon = InputContainer:extend{
+    width = nil,
+    height = nil,
+    icon_name = "article-unread",
+    callback = nil,
+}
+
+function ArticleStatusIcon:init()
+    self.icon = Icons.widget(self.icon_name, { size = ARTICLE_ICON_SIZE })
+    self[1] = CenterContainer:new{
+        dimen = Geom:new{ w = self.width, h = self.height },
+        self.icon,
+    }
+    self.dimen = self[1]:getSize()
+    self.ges_events = {
+        TapToggleStatus = {
+            GestureRange:new{
+                ges = "tap",
+                range = self.dimen,
+            },
+        },
+    }
+end
+
+function ArticleStatusIcon:onTapToggleStatus()
+    if self.callback then
+        self.callback()
+    end
+    return true
 end
 
 function ArticleContentTapArea:onTapOpenArticle()
@@ -93,7 +170,8 @@ local function getArticleRowMetrics(row_width, row_height, title_font_size)
     local title_line_height = measureTextBoxLineHeight(title_face, 0.15)
     local subtitle_height = measureTextBoxLineHeight(subtitle_face, 0.1)
     local button_font_size = getButtonFontSizeForHeight(row_height, button_padding_v)
-    local action_width = math.max(ARTICLE_BUTTON_MIN_WIDTH, math.floor(row_width * 0.16))
+    local status_width = math.max(ARTICLE_STATUS_MIN_WIDTH, math.floor(row_width * 0.055))
+    local action_width = status_width
 
     return {
         title_face = title_face,
@@ -103,6 +181,7 @@ local function getArticleRowMetrics(row_width, row_height, title_font_size)
         button_padding_v = button_padding_v,
         button_padding_h = button_padding_h,
         button_font_size = button_font_size,
+        status_width = status_width,
         action_width = action_width,
         horizontal_padding = ARTICLE_ITEM_HORIZONTAL_PADDING,
         vertical_padding = ARTICLE_ITEM_VERTICAL_PADDING,
@@ -142,6 +221,7 @@ local QiArticleItemWidget = InputContainer:extend{
     height = nil,
     item = nil,
     title_font_size = 18,
+    onToggleReadState = nil,
     onToggleReadLater = nil,
     onOpenArticle = nil,
 }
@@ -161,16 +241,21 @@ function QiArticleItemWidget:rebuild()
     local metrics = getArticleRowMetrics(row_width, row_height, self.title_font_size)
     local text_color = item.status == 0 and Blitbuffer.COLOR_BLACK or ARTICLE_DIM_TEXT_COLOR
     local subtitle_color = ARTICLE_DIM_TEXT_COLOR
-    local action_color = item.is_read_later and ARTICLE_ACTION_DIM_COLOR or ARTICLE_ACTION_COLOR
-    local action_button = Button:new{
-        text = _("RIT"),
+    local status_icon = ArticleStatusIcon:new{
+        width = metrics.status_width,
+        height = getArticleButtonHeight(metrics),
+        icon_name = item.status == 0 and "article-unread" or "article-read",
+        callback = function()
+            if self.onToggleReadState then
+                self.onToggleReadState(item)
+            end
+        end,
+    }
+    local action_button = ArticleActionIconButton:new{
         width = metrics.action_width,
-        radius = Size.radius.button,
-        bordersize = Size.border.button,
-        padding_v = metrics.button_padding_v,
-        padding_h = metrics.button_padding_h,
-        text_font_size = metrics.button_font_size,
-        text_font_bold = false,
+        height = getArticleButtonHeight(metrics),
+        icon_name = "read-later",
+        icon_state = item.is_read_later and "active" or nil,
         callback = function()
             if self.onToggleReadLater then
                 self.onToggleReadLater(item)
@@ -178,12 +263,11 @@ function QiArticleItemWidget:rebuild()
         end,
         show_parent = self,
     }
-    action_button.label_widget.fgcolor = action_color
-    action_button.frame.color = action_color
+    local status_icon_width = status_icon:getSize().w
     local action_button_width = action_button:getSize().w
     local content_width = math.max(
         ARTICLE_ITEM_MIN_CONTENT_WIDTH,
-        row_width - metrics.horizontal_padding * 2 - metrics.action_gap - action_button_width
+        row_width - metrics.horizontal_padding * 2 - status_icon_width - action_button_width - metrics.action_gap * 2
     )
     local text_block_height = math.max(1, row_height - metrics.vertical_padding * 2)
     local subtitle_area_height = metrics.subtitle_height
@@ -250,6 +334,10 @@ function QiArticleItemWidget:rebuild()
             text_content,
         },
     }
+    local status_block = CenterContainer:new{
+        dimen = Geom:new{ w = status_icon_width, h = row_height },
+        status_icon,
+    }
     local action_block = CenterContainer:new{
         dimen = Geom:new{ w = action_button_width, h = row_height },
         action_button,
@@ -264,6 +352,8 @@ function QiArticleItemWidget:rebuild()
         HorizontalGroup:new{
             align = "center",
             HorizontalSpan:new{ width = metrics.horizontal_padding },
+            status_block,
+            HorizontalSpan:new{ width = metrics.action_gap },
             text_block,
             HorizontalSpan:new{ width = metrics.action_gap },
             action_block,

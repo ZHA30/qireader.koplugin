@@ -1,6 +1,5 @@
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../../i18n/po.lua")
 
-local Blitbuffer = require("ffi/blitbuffer")
 local BD = require("ui/bidi")
 local ButtonDialog = require("ui/widget/buttondialog")
 local FontChooser = require("ui/widget/fontchooser")
@@ -64,22 +63,8 @@ function methods:resetFullTextState(entry_id)
     self.full_text_original = nil
 end
 
-function methods:refreshFullTextButtonStyle()
-    if not self.button_table or not self.button_table.getButtonById then
-        return
-    end
-    local button = self.button_table:getButtonById("full_text")
-    if not button or not button.label_widget then
-        return
-    end
-    if self:isFullTextLoading() or self:isFullTextLoaded() then
-        button.label_widget.fgcolor = Blitbuffer.COLOR_DARK_GRAY
-    else
-        button.label_widget.fgcolor = Blitbuffer.COLOR_BLACK
-    end
-    if button.label_widget.update then
-        button.label_widget:update()
-    end
+function methods.refreshFullTextButtonStyle()
+    return
 end
 
 function methods:setFullTextState(state, entry_id)

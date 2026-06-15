@@ -214,6 +214,9 @@ function methods:refreshItems()
             height = item_height,
             item = item,
             title_font_size = self:getTitleFontSize(),
+            onToggleReadState = function(entry)
+                self.controller:toggleArticleReadState(entry)
+            end,
             onToggleReadLater = function(entry)
                 self.controller:toggleReadLater(entry, self)
             end,

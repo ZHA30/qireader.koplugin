@@ -1,22 +1,258 @@
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../i18n/po.lua")
 
 local Blitbuffer = require("ffi/blitbuffer")
-local ButtonTable = require("ui/widget/buttontable")
+local Button = require("ui/widget/button")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
 local InputContainer = require("ui/widget/container/inputcontainer")
+local LineWidget = require("ui/widget/linewidget")
 local MovableContainer = require("ui/widget/container/movablecontainer")
+local Icons = require("qireader.icons")
 local Size = require("ui/size")
 local TitleBar = require("ui/widget/titlebar")
 local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local ArticleContent = require("qireader.articlecontent")
 local interaction_methods = require("qireader.articledetail.interactions")
 local view_module = require("qireader.articledetail.view")
 local Screen = Device.screen
+local DETAIL_ACTION_ICON_SIZE = Icons.size.detail
+
+local PluginIconButton = Button:extend{
+    icon_name = nil,
+    icon_state = nil,
+    disabled_icon_name = nil,
+    disabled_icon_state = nil,
+    bordersize = 0,
+    margin = 0,
+    padding = Size.padding.buttontable,
+}
+
+function PluginIconButton:init()
+    if self.text then
+        return Button.init(self)
+    end
+
+    if self.enabled_func then
+        self.enabled = self.enabled_func() == true
+    end
+
+    if not self.padding_h then
+        self.padding_h = self.padding
+    end
+    if not self.padding_v then
+        self.padding_v = self.padding
+    end
+
+    local outer_pad_width = 2 * self.padding_h + 2 * self.margin + 2 * self.bordersize
+    local current_icon_name = self.icon_name
+    local current_icon_state = self.icon_state
+    if not self.enabled and self.disabled_icon_name then
+        current_icon_name = self.disabled_icon_name
+        current_icon_state = self.disabled_icon_state
+    end
+    self.label_widget = Icons.widget(current_icon_name, {
+        state = current_icon_state,
+        width = self.icon_width or DETAIL_ACTION_ICON_SIZE,
+        height = self.icon_height or DETAIL_ACTION_ICON_SIZE,
+        dim = not self.enabled,
+    })
+    self._min_needed_width = (self.icon_width or DETAIL_ACTION_ICON_SIZE) + outer_pad_width
+
+    local widget_size = self.label_widget:getSize()
+    local label_container_height = self.height or widget_size.h
+    local inner_width
+    if self.width then
+        inner_width = self.width - outer_pad_width
+    else
+        inner_width = widget_size.w
+    end
+
+    self.label_container = CenterContainer:new{
+        dimen = Geom:new{
+            w = inner_width,
+            h = label_container_height,
+        },
+        self.label_widget,
+    }
+
+    local background_color, border_color, radius
+    if self.background then
+        background_color = self.background
+        border_color = background_color
+        radius = self.radius or Size.radius.button
+    else
+        background_color = Blitbuffer.COLOR_WHITE
+        radius = self.radius
+    end
+    self.frame = FrameContainer:new{
+        margin = self.margin,
+        show_parent = self.show_parent,
+        bordersize = self.bordersize,
+        background = background_color,
+        color = border_color,
+        radius = radius,
+        padding_top = self.padding_v,
+        padding_bottom = self.padding_v,
+        padding_left = self.padding_h,
+        padding_right = self.padding_h,
+        self.label_container,
+    }
+    if self.preselect then
+        self.frame.invert = true
+    end
+    self.dimen = self.frame:getSize()
+    self[1] = self.frame
+    self.ges_events = {
+        TapSelectButton = {
+            GestureRange:new{
+                ges = "tap",
+                range = self.dimen,
+            },
+        },
+        HoldSelectButton = {
+            GestureRange:new{
+                ges = "hold",
+                range = self.dimen,
+            },
+        },
+        HoldReleaseSelectButton = {
+            GestureRange:new{
+                ges = "hold_release",
+                range = self.dimen,
+            },
+        },
+    }
+end
+
+local ArticleBottomBar = InputContainer:extend{
+    width = nil,
+    show_parent = nil,
+    owner = nil,
+}
+
+function ArticleBottomBar:init()
+    local button_height = Screen:scaleBySize(40)
+    local sep_width = Size.line.medium
+    local button_width = math.floor((self.width - sep_width * 3) / 4)
+
+    self.prev_button = PluginIconButton:new{
+        width = button_width,
+        height = button_height,
+        icon_name = "article-prev",
+        disabled_icon_name = "article-prev-disabled",
+        icon_width = DETAIL_ACTION_ICON_SIZE,
+        icon_height = DETAIL_ACTION_ICON_SIZE,
+        enabled_func = function()
+            return self.owner:canGoPrevArticle()
+        end,
+        callback = function()
+            self.owner:goToPrevArticle()
+        end,
+        show_parent = self.show_parent,
+    }
+    self.next_button = PluginIconButton:new{
+        width = button_width,
+        height = button_height,
+        icon_name = "article-next",
+        disabled_icon_name = "article-next-disabled",
+        icon_width = DETAIL_ACTION_ICON_SIZE,
+        icon_height = DETAIL_ACTION_ICON_SIZE,
+        enabled_func = function()
+            return self.owner:canGoNextArticle()
+        end,
+        callback = function()
+            self.owner:goToNextArticle()
+        end,
+        show_parent = self.show_parent,
+    }
+    local fulltext_icon_state = nil
+    if self.owner:isFullTextLoaded() then
+        fulltext_icon_state = "active"
+    elseif self.owner:isFullTextLoading() then
+        fulltext_icon_state = "disabled"
+    end
+    self.full_text_button = PluginIconButton:new{
+        enabled_func = function()
+            return not self.owner:isFullTextLoading()
+        end,
+        icon_name = "fulltext",
+        icon_state = fulltext_icon_state,
+        disabled_icon_name = "fulltext",
+        disabled_icon_state = "disabled",
+        icon_width = DETAIL_ACTION_ICON_SIZE,
+        icon_height = DETAIL_ACTION_ICON_SIZE,
+        callback = function()
+            self.owner:loadFullText()
+        end,
+        width = button_width,
+        height = button_height,
+        show_parent = self.show_parent,
+    }
+    self.close_button = PluginIconButton:new{
+        icon_name = "article-close",
+        disabled_icon_name = "article-close",
+        icon_width = DETAIL_ACTION_ICON_SIZE,
+        icon_height = DETAIL_ACTION_ICON_SIZE,
+        callback = function()
+            self.owner:onClose()
+        end,
+        width = button_width,
+        height = button_height,
+        show_parent = self.show_parent,
+    }
+    local vertical_sep = function(height)
+        return LineWidget:new{
+            background = Blitbuffer.COLOR_GRAY,
+            dimen = Geom:new{
+                w = sep_width,
+                h = height,
+            },
+        }
+    end
+    local row_height = self.prev_button:getSize().h
+    self.group = HorizontalGroup:new{
+        align = "center",
+        self.prev_button,
+        vertical_sep(row_height),
+        self.next_button,
+        vertical_sep(row_height),
+        self.full_text_button,
+        vertical_sep(row_height),
+        self.close_button,
+    }
+    self.container = VerticalGroup:new{
+        width = self.width,
+        LineWidget:new{
+            background = Blitbuffer.COLOR_GRAY,
+            dimen = Geom:new{
+                w = self.width,
+                h = sep_width,
+            },
+        },
+        VerticalSpan:new{
+            width = Size.span.vertical_default,
+        },
+        self.group,
+        VerticalSpan:new{
+            width = Size.span.vertical_default,
+        },
+    }
+    self[1] = self.container
+    self.dimen = self.container:getSize()
+end
+
+function ArticleBottomBar:getButtonById(id)
+    if id == "full_text" then
+        return self.full_text_button
+    end
+    return nil
+end
 
 local DEFAULT_FONT_SIZE = view_module.default_font_size
 local DEFAULT_FONT_FILE = view_module.default_font_file
@@ -124,7 +360,7 @@ function QiArticleDetailWidget:init()
         show_parent = self,
     }
 
-    self.button_table = self:createButtonTable()
+    self.button_table = self:createBottomBar()
     self:refreshFullTextButtonStyle()
     self.scroll_widget = self:createScrollWidget()
     self.content_frame = FrameContainer:new{
@@ -174,52 +410,11 @@ function QiArticleDetailWidget:init()
     }
 end
 
-function QiArticleDetailWidget:getBottomButtons()
-    return {{
-            {
-                text = _("Previous"),
-                enabled_func = function()
-                    return self:canGoPrevArticle()
-                end,
-                callback = function()
-                    self:goToPrevArticle()
-                end,
-            },
-            {
-                text = _("Next"),
-                enabled_func = function()
-                    return self:canGoNextArticle()
-                end,
-                callback = function()
-                    self:goToNextArticle()
-                end,
-            },
-            {
-                id = "full_text",
-                text = self:getFullTextButtonText(),
-                enabled = not self:isFullTextLoading(),
-                enabled_func = function()
-                    return not self:isFullTextLoading()
-                end,
-                callback = function()
-                    self:loadFullText()
-                end,
-            },
-            {
-                text = _("Close"),
-                callback = function()
-                    self:onClose()
-                end,
-            },
-        }}
-end
-
-function QiArticleDetailWidget:createButtonTable()
-    return ButtonTable:new{
+function QiArticleDetailWidget:createBottomBar()
+    return ArticleBottomBar:new{
         width = self.width,
-        zero_sep = true,
+        owner = self,
         show_parent = self,
-        buttons = self:getBottomButtons(),
     }
 end
 
@@ -227,10 +422,15 @@ function QiArticleDetailWidget:refreshBottomButtons()
     if not self.button_table then
         return
     end
-    self.button_table.buttons = self:getBottomButtons()
-    self.button_table:free()
-    self.button_table:init()
-    self:refreshFullTextButtonStyle()
+    local old_bar = self.button_table
+    self.button_table = self:createBottomBar()
+    if self.frame and self.frame[1] and self.frame[1][3] and self.frame[1][3][1] then
+        self.frame[1][3][1] = self.button_table
+        self.frame[1][3].dimen.h = self.button_table:getSize().h
+    end
+    if old_bar and old_bar.free then
+        old_bar:free()
+    end
 end
 
 function QiArticleDetailWidget:updateArticleDetail(entry, html, title)
