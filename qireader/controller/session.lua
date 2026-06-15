@@ -329,22 +329,81 @@ function methods:startSubscriptionsLoad(options)
     pollSubscriptions()
 end
 
+function methods:startUnreadCountsLoad(options)
+    options = options or {}
+    if not self.subscriptions or #self.subscriptions == 0 then
+        return false
+    end
+    local token = self:nextJobToken("unread_counts")
+    local unread_job = self:createBackgroundRequest({
+        method = "GET",
+        path = "/markers/unread/counts",
+    })
+    if not unread_job then
+        return false
+    end
+    self:registerPendingJob("unread_counts", unread_job)
+
+    local function pollUnread()
+        if self.state == "closed"
+            or not self:isJobTokenCurrent("unread_counts", token)
+            or self.pending_jobs.unread_counts ~= unread_job then
+            self:cancelPendingJob("unread_counts", unread_job)
+            return
+        end
+        local done, unread_response = unread_job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, pollUnread)
+            return
+        end
+        self:clearPendingJob("unread_counts", unread_job)
+        self:applyResponseSession(unread_response)
+        if unread_response and unread_response.code == 401 then
+            self:handleUnauthorized()
+            return
+        end
+        local unread_json = unread_response and unread_response.code == 200 and unread_response.json or nil
+        if unread_json then
+            self:writeCache(self:cacheKey("unread_counts"), unread_json)
+            self:applyUnreadCounts(unread_json, {
+                refresh_existing = true,
+            })
+        end
+    end
+
+    pollUnread()
+    return true
+end
+
 function methods:openHome(options)
     options = options or {}
     if not self.settings.cookie then
         self:showGroupsFromCache()
         return
     end
+    local cached_subscriptions, subscriptions_cache_fresh = self:getSubscriptionsCacheState()
     local has_cache = self:showGroupsFromCache()
     if not NetworkMgr:isOnline() then
         return
     end
-    if options.force_loading or not has_cache then
+    local should_force_full_load = options.force_loading == true
+    local should_refresh_subscriptions = should_force_full_load
+        or not has_cache
+        or not cached_subscriptions
+        or not subscriptions_cache_fresh
+    if should_force_full_load or not has_cache then
         self.state = "loading"
         self:showLoading(_("Loading"))
     end
-    self:startSubscriptionsLoad({
-        silent = (not options.force_loading) and has_cache,
+    if should_refresh_subscriptions then
+        self:startSubscriptionsLoad({
+            silent = (not should_force_full_load) and has_cache,
+            refresh_existing = has_cache,
+        })
+        return
+    end
+    self:startUnreadCountsLoad({
+        refresh_existing = true,
     })
 end
 

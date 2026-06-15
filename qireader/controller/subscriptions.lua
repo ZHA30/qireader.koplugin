@@ -109,6 +109,15 @@ end
 
 local methods = {}
 
+function methods:getSubscriptionsCacheState()
+    local data, fresh = self:readCache(
+        self:cacheKey("subscriptions"),
+        self:getCacheTtl("subscriptions"),
+        true
+    )
+    return data, fresh == true
+end
+
 function methods:showGroups(data, unread_data, options)
     options = options or {}
     self.state = "groups"
@@ -182,11 +191,7 @@ function methods:showGroupsFromCache()
         self:showGroupsPage()
         return true
     end
-    local data = self:readCache(
-        self:cacheKey("subscriptions"),
-        self:getCacheTtl("subscriptions"),
-        true
-    )
+    local data = self:getSubscriptionsCacheState()
     if data then
         local unread_data = self:readCache(
             self:cacheKey("unread_counts"),
@@ -201,6 +206,35 @@ function methods:showGroupsFromCache()
     self.subscriptions = {}
     self:showGroupsPage()
     return false
+end
+
+function methods:applyUnreadCounts(unread_data, options)
+    if not self.subscriptions or #self.subscriptions == 0 then
+        return false
+    end
+    options = options or {}
+    local unread_by_subscription_id = makeUnreadMap(unread_data)
+    local changed = false
+    for i = 1, #self.subscriptions do
+        local subscription = self.subscriptions[i]
+        local new_count = tonumber(unread_by_subscription_id[subscription.id]) or 0
+        local old_count = tonumber(subscription.unread_count) or 0
+        if new_count ~= old_count then
+            subscription.unread_count = new_count
+            changed = true
+        end
+    end
+    if not changed then
+        return false
+    end
+    self:recomputeGroupUnreadCounts()
+    self.subscriptions_dirty = false
+    if options.refresh_existing and self.menu then
+        self:refreshGroupsPage()
+    elseif self.state == "groups" and self.menu then
+        self:refreshGroupsPage()
+    end
+    return true
 end
 
 function methods.buildArticleTarget(_self, row)
