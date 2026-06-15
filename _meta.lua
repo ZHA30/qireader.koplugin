@@ -2,5 +2,5 @@ local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "i18
 
 return {
     fullname = _("QiReader"),
-    description = _("Browse QiReader subscriptions and groups."),
+    description = _("A modern web RSS reader, beautiful, fast, and synced on all your devices."),
 }
