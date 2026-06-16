@@ -414,7 +414,7 @@ function methods:buildGroupsPageItems()
         local is_expanded = self.expanded_tags == true
         table.insert(items, {
             text = _("Tags"),
-            state = makeIconState("tag"),
+            state = makeGroupStateIcon(is_expanded),
             bold = true,
             dim = false,
             callback = function()
@@ -427,7 +427,7 @@ function methods:buildGroupsPageItems()
                 local tag = tags[i]
                 table.insert(items, {
                     text = tag.label or _("Untitled"),
-                    state = makeStateButton(""),
+                    state = makeIconState("tag"),
                     bold = false,
                     dim = false,
                     tag = tag,
