@@ -187,6 +187,18 @@ msgstr "无法解析稍后阅读标签。"
 msgid "Cannot update read-later state."
 msgstr "无法更新稍后阅读状态。"
 
+msgid "Cannot update tags."
+msgstr "无法更新标签。"
+
+msgid "No tags."
+msgstr "没有标签。"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Apply"
+msgstr "应用"
+
 msgid "Cannot load full article."
 msgstr "无法加载网页全文。"
 

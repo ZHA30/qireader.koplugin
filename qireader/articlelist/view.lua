@@ -207,6 +207,7 @@ function methods:refreshItems()
     if self.item_top_spacing > 0 then
         table.insert(self.items_group, VerticalSpan:new{ width = self.item_top_spacing })
     end
+    local is_read_later_stream = self.target and self.target.kind == "readlater"
     for i = 1, #page.entries do
         local item = page.entries[i]
         table.insert(self.items_group, item_module.Widget:new{
@@ -214,11 +215,16 @@ function methods:refreshItems()
             height = item_height,
             item = item,
             title_font_size = self:getTitleFontSize(),
+            left_action = is_read_later_stream and "read_later" or "read_state",
+            right_action = is_read_later_stream and "tags" or "read_later",
             onToggleReadState = function(entry)
                 self.controller:toggleArticleReadState(entry)
             end,
             onToggleReadLater = function(entry)
                 self.controller:toggleReadLater(entry, self)
+            end,
+            onShowTags = function(entry, ges)
+                self.controller:showArticleTagsDialog(entry, self, ges)
             end,
             onOpenArticle = function(entry)
                 self:prefetchArticleContentsAfterEntry(entry)

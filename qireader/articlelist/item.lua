@@ -94,9 +94,9 @@ function ArticleActionIconButton:init()
     }
 end
 
-function ArticleActionIconButton:onTapSelectAction()
+function ArticleActionIconButton:onTapSelectAction(_arg, ges)
     if self.callback then
-        self.callback()
+        self.callback(ges)
     end
     return true
 end
@@ -221,8 +221,11 @@ local QiArticleItemWidget = InputContainer:extend{
     height = nil,
     item = nil,
     title_font_size = 18,
+    left_action = "read_state",
+    right_action = "read_later",
     onToggleReadState = nil,
     onToggleReadLater = nil,
+    onShowTags = nil,
     onOpenArticle = nil,
 }
 
@@ -241,33 +244,66 @@ function QiArticleItemWidget:rebuild()
     local metrics = getArticleRowMetrics(row_width, row_height, self.title_font_size)
     local text_color = item.status == 0 and Blitbuffer.COLOR_BLACK or ARTICLE_DIM_TEXT_COLOR
     local subtitle_color = ARTICLE_DIM_TEXT_COLOR
-    local status_icon = ArticleStatusIcon:new{
-        width = metrics.status_width,
-        height = getArticleButtonHeight(metrics),
-        icon_name = item.status == 0 and "article-unread" or "article-read",
-        callback = function()
-            if self.onToggleReadState then
-                self.onToggleReadState(item)
-            end
-        end,
-    }
-    local action_button = ArticleActionIconButton:new{
-        width = metrics.action_width,
-        height = getArticleButtonHeight(metrics),
-        icon_name = "read-later",
-        icon_state = item.is_read_later and "active" or nil,
-        callback = function()
-            if self.onToggleReadLater then
-                self.onToggleReadLater(item)
-            end
-        end,
-        show_parent = self,
-    }
-    local status_icon_width = status_icon:getSize().w
-    local action_button_width = action_button:getSize().w
+    local button_height = getArticleButtonHeight(metrics)
+    local left_button
+    if self.left_action == "read_later" then
+        left_button = ArticleActionIconButton:new{
+            width = metrics.status_width,
+            height = button_height,
+            icon_name = "read-later",
+            icon_state = item.is_read_later and "active" or nil,
+            callback = function()
+                if self.onToggleReadLater then
+                    self.onToggleReadLater(item)
+                end
+            end,
+            show_parent = self,
+        }
+    else
+        left_button = ArticleStatusIcon:new{
+            width = metrics.status_width,
+            height = button_height,
+            icon_name = item.status == 0 and "article-unread" or "article-read",
+            callback = function()
+                if self.onToggleReadState then
+                    self.onToggleReadState(item)
+                end
+            end,
+        }
+    end
+    local right_button
+    if self.right_action == "tags" then
+        right_button = ArticleActionIconButton:new{
+            width = metrics.action_width,
+            height = button_height,
+            icon_name = "tag",
+            icon_state = item.has_tags and "active" or nil,
+            callback = function(ges)
+                if self.onShowTags then
+                    self.onShowTags(item, ges)
+                end
+            end,
+            show_parent = self,
+        }
+    else
+        right_button = ArticleActionIconButton:new{
+            width = metrics.action_width,
+            height = button_height,
+            icon_name = "read-later",
+            icon_state = item.is_read_later and "active" or nil,
+            callback = function()
+                if self.onToggleReadLater then
+                    self.onToggleReadLater(item)
+                end
+            end,
+            show_parent = self,
+        }
+    end
+    local left_button_width = left_button:getSize().w
+    local right_button_width = right_button:getSize().w
     local content_width = math.max(
         ARTICLE_ITEM_MIN_CONTENT_WIDTH,
-        row_width - metrics.horizontal_padding * 2 - status_icon_width - action_button_width - metrics.action_gap * 2
+        row_width - metrics.horizontal_padding * 2 - left_button_width - right_button_width - metrics.action_gap * 2
     )
     local text_block_height = math.max(1, row_height - metrics.vertical_padding * 2)
     local subtitle_area_height = metrics.subtitle_height
@@ -335,12 +371,12 @@ function QiArticleItemWidget:rebuild()
         },
     }
     local status_block = CenterContainer:new{
-        dimen = Geom:new{ w = status_icon_width, h = row_height },
-        status_icon,
+        dimen = Geom:new{ w = left_button_width, h = row_height },
+        left_button,
     }
     local action_block = CenterContainer:new{
-        dimen = Geom:new{ w = action_button_width, h = row_height },
-        action_button,
+        dimen = Geom:new{ w = right_button_width, h = row_height },
+        right_button,
     }
 
     self[1] = FrameContainer:new{

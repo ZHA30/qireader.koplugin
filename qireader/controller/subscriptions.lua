@@ -341,20 +341,10 @@ function methods:normalizeArticlePage(target, result)
         has_more = result.hasMore == true,
         next_cursor = nil,
     }
-    local readlater_tag_id = self.readlater_tag_id
     for i = 1, #entries do
         local entry = entries[i]
         local tag_ids = entry.tagIds or {}
-        local is_read_later = false
-        if readlater_tag_id then
-            for j = 1, #tag_ids do
-                if tag_ids[j] == readlater_tag_id then
-                    is_read_later = true
-                    break
-                end
-            end
-        end
-        table.insert(normalized.entries, {
+        local normalized_entry = {
             id = entry.id,
             title = entry.title or _("Untitled"),
             status = entry.status or 0,
@@ -366,10 +356,15 @@ function methods:normalizeArticlePage(target, result)
             source_title = self:getSubscriptionTitleByFeedId(entry.origin and entry.origin.feedId or nil),
             date_text = self:formatArticleDate(entry.publishedAt),
             tag_ids = tag_ids,
-            is_read_later = is_read_later,
+            is_read_later = false,
+            has_tags = false,
             raw = entry,
             target = target,
-        })
+        }
+        if self.syncArticleTagEntry then
+            self:syncArticleTagEntry(normalized_entry)
+        end
+        table.insert(normalized.entries, normalized_entry)
     end
     if #entries > 0 then
         normalized.next_cursor = entries[#entries].timestamp
