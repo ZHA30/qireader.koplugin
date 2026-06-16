@@ -85,6 +85,28 @@ local function groupSubscriptions(data, unread_by_subscription_id)
     }
 end
 
+local function normalizeTags(data)
+    local result = data and data.result or {}
+    local has_tags_payload = type(result.tags) == "table"
+    local raw_tags = has_tags_payload and result.tags or {}
+    local tags = {}
+    local readlater_tag = nil
+    for i = 1, #raw_tags do
+        local tag = raw_tags[i]
+        if tag and tag.id then
+            if tag.label == "!readlater" then
+                readlater_tag = tag
+            else
+                tags[#tags + 1] = tag
+            end
+        end
+    end
+    table.sort(tags, function(left, right)
+        return (left.label or "") < (right.label or "")
+    end)
+    return tags, readlater_tag, has_tags_payload
+end
+
 local function findSubscriptionByEntry(controller, entry)
     local target = entry and entry.target or nil
     if target and target.subscription then
@@ -118,16 +140,45 @@ function methods:getSubscriptionsCacheState()
     return data, fresh == true
 end
 
-function methods:showGroups(data, unread_data, options)
+function methods:getTagsCacheState()
+    local data, fresh = self:readCache(
+        self:cacheKey("tags"),
+        self:getCacheTtl("tags"),
+        true
+    )
+    return data, fresh == true
+end
+
+function methods:showGroups(data, tags_data, unread_data, options)
     options = options or {}
     self.state = "groups"
     if self.clearGroupsPlaceholderState then
         self:clearGroupsPlaceholderState()
     end
     local grouped = groupSubscriptions(data, makeUnreadMap(unread_data))
+    local tags, readlater_tag, has_tags_payload = normalizeTags(tags_data)
     self.groups = grouped.groups
     self.ungrouped = grouped.ungrouped
     self.subscriptions = grouped.subscriptions
+    self.tags = tags
+    if readlater_tag then
+        self.readlater_tag = readlater_tag
+        self.readlater_tag_id = readlater_tag.id
+        self:writeCache(self:cacheKey("readlater_tag"), readlater_tag.id)
+    elseif has_tags_payload then
+        self.readlater_tag = nil
+        self.readlater_tag_id = nil
+        self:removeCache(self:cacheKey("readlater_tag"))
+    else
+        self.readlater_tag = nil
+        if not self.readlater_tag_id then
+            self.readlater_tag_id = self:readCache(
+                self:cacheKey("readlater_tag"),
+                self:getCacheTtl("readlater_tag"),
+                true
+            )
+        end
+    end
     self.subscriptions_dirty = false
     local valid_groups = {}
     for i = 1, #self.groups do
@@ -187,23 +238,29 @@ function methods:adjustSubscriptionUnreadCounts(entries, delta)
 end
 
 function methods:showGroupsFromCache()
-    if self.groups and self.ungrouped and self.subscriptions then
+    if self.groups and self.ungrouped and self.subscriptions and self.tags then
         self:showGroupsPage()
         return true
     end
     local data = self:getSubscriptionsCacheState()
     if data then
+        local tags_data = self:readCache(
+            self:cacheKey("tags"),
+            self:getCacheTtl("tags"),
+            true
+        )
         local unread_data = self:readCache(
             self:cacheKey("unread_counts"),
             self:getCacheTtl("unread_counts"),
             true
         )
-        self:showGroups(data, unread_data)
+        self:showGroups(data, tags_data, unread_data)
         return true
     end
     self.groups = {}
     self.ungrouped = {}
     self.subscriptions = {}
+    self.tags = {}
     self:showGroupsPage()
     return false
 end
@@ -254,6 +311,14 @@ function methods.buildArticleTarget(_self, row)
             stream_id = "subscription-" .. tostring(subscription.id),
             subscription = subscription,
             group = row.group,
+        }
+    elseif row.type == "tag" and row.tag then
+        local tag = row.tag
+        return {
+            kind = tag.label == "!readlater" and "readlater" or "tag",
+            title = tag.label == "!readlater" and _("Read Later") or (tag.label or _("Untitled")),
+            stream_id = "tag-" .. tostring(tag.id),
+            tag = tag,
         }
     end
 end

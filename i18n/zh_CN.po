@@ -76,6 +76,12 @@ msgstr "订阅"
 msgid "All"
 msgstr "全部"
 
+msgid "Read Later"
+msgstr "稍后阅读"
+
+msgid "Tags"
+msgstr "标签"
+
 msgid "Untitled"
 msgstr "未命名"
 

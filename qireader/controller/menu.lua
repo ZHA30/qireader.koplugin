@@ -315,8 +315,27 @@ function methods:buildGroupsPageItems()
         }
     end
 
-    for i = 1, #groups do
-        local group = groups[i]
+    local function makeIconState(icon_name)
+        return GroupStateIcon:new{
+            width = button_width,
+            height = Screen:scaleBySize(math.max(24, state_font_size + 8)),
+            icon_name = icon_name,
+        }
+    end
+
+    local function getReadLaterTag()
+        if self.readlater_tag and self.readlater_tag.id then
+            return self.readlater_tag
+        end
+        if self.readlater_tag_id then
+            return {
+                id = self.readlater_tag_id,
+                label = "!readlater",
+            }
+        end
+    end
+
+    local function appendGroup(group)
         local visible_subscriptions = {}
         for j = 1, #group.subscriptions do
             local subscription = group.subscriptions[j]
@@ -324,7 +343,7 @@ function methods:buildGroupsPageItems()
                 table.insert(visible_subscriptions, subscription)
             end
         end
-        if (not self:isUnreadOnly()) or (group.unread_count or 0) > 0 then
+        if group.is_all or (not self:isUnreadOnly()) or (group.unread_count or 0) > 0 then
             local is_expanded = self.expanded_groups[group.id] == true
             table.insert(items, {
                 text = group.is_all and _("All") or group.label or _("Untitled"),
@@ -359,6 +378,69 @@ function methods:buildGroupsPageItems()
                 end
             end
         end
+    end
+
+    local all_group = nil
+    local category_groups = {}
+    for i = 1, #groups do
+        local group = groups[i]
+        if group.is_all then
+            all_group = group
+        else
+            category_groups[#category_groups + 1] = group
+        end
+    end
+
+    if all_group then
+        appendGroup(all_group)
+    end
+
+    local readlater_tag = getReadLaterTag()
+    if readlater_tag then
+        table.insert(items, {
+            text = _("Read Later"),
+            state = makeIconState("read-later"),
+            bold = true,
+            dim = false,
+            tag = readlater_tag,
+            callback = function()
+                self:openArticles({ type = "tag", tag = readlater_tag })
+            end,
+        })
+    end
+
+    local tags = self.tags or {}
+    if #tags > 0 then
+        local is_expanded = self.expanded_tags == true
+        table.insert(items, {
+            text = _("Tags"),
+            state = makeIconState("tag"),
+            bold = true,
+            dim = false,
+            callback = function()
+                self.expanded_tags = not is_expanded
+                self:refreshGroupsPage()
+            end,
+        })
+        if is_expanded then
+            for i = 1, #tags do
+                local tag = tags[i]
+                table.insert(items, {
+                    text = tag.label or _("Untitled"),
+                    state = makeStateButton(""),
+                    bold = false,
+                    dim = false,
+                    tag = tag,
+                    callback = function()
+                        self:openArticles({ type = "tag", tag = tag })
+                    end,
+                })
+            end
+        end
+    end
+
+    for i = 1, #category_groups do
+        appendGroup(category_groups[i])
     end
 
     for i = 1, #ungrouped do
@@ -402,6 +484,7 @@ function methods:showGroupsPage()
             if ges_ev and ges_ev.direction == "south" then
                 if self.state == "loading"
                     or self.pending_jobs.subscriptions
+                    or self.pending_jobs.tags
                     or self.pending_jobs.unread_counts then
                     return true
                 end

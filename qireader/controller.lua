@@ -27,12 +27,15 @@ function Controller.new(args)
         groups = nil,
         ungrouped = nil,
         subscriptions = nil,
+        tags = nil,
         expanded_groups = {},
+        expanded_tags = false,
         state = "closed",
         active_dialog = nil,
         login_dialog = nil,
         article_widget = nil,
         article_detail_widget = nil,
+        readlater_tag = nil,
         readlater_tag_id = nil,
         readlater_tag_callbacks = nil,
         pending_jobs = {},
@@ -145,6 +148,12 @@ function Controller:writeCache(key, payload)
         return self.cache:put(key, payload)
     end
     return false
+end
+
+function Controller:removeCache(key)
+    if self.cache then
+        self.cache:remove(key)
+    end
 end
 
 function Controller:clearCache()

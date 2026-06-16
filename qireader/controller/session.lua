@@ -21,11 +21,16 @@ local function resetSubscriptions(controller)
     controller.groups = {}
     controller.ungrouped = {}
     controller.subscriptions = {}
+    controller.tags = {}
+    controller.readlater_tag = nil
+    controller.readlater_tag_id = nil
 end
 
 local function clearSession(controller)
     controller:clearCache()
     Settings.clearSession(controller.settings)
+    controller.expanded_tags = false
+    controller.readlater_tag = nil
     controller.readlater_tag_id = nil
     controller.readlater_tag_callbacks = nil
     controller.settings.stream_cache_generation = 0
@@ -243,7 +248,7 @@ function methods:startSubscriptionsLoad(options)
         end)
     end
 
-    local function pollUnreadCounts(subscriptions_response)
+    local function pollUnreadCounts(subscriptions_response, tags_response)
         local unread_job = self:createBackgroundRequest({
             method = "GET",
             path = "/markers/unread/counts",
@@ -253,6 +258,7 @@ function methods:startSubscriptionsLoad(options)
             self.state = "groups"
             self:showGroups(
                 subscriptions_response.json,
+                tags_response,
                 self:readCache(self:cacheKey("unread_counts"), self:getCacheTtl("unread_counts"), true),
                 options
             )
@@ -289,10 +295,54 @@ function methods:startSubscriptionsLoad(options)
                 )
             end
             self.state = "groups"
-            self:showGroups(subscriptions_response.json, unread_json, options)
+            self:showGroups(subscriptions_response.json, tags_response, unread_json, options)
         end
 
         pollUnread()
+    end
+
+    local function pollTags(subscriptions_response)
+        local tags_job = self:createBackgroundRequest({
+            method = "GET",
+            path = "/tags",
+        })
+        if not tags_job then
+            pollUnreadCounts(
+                subscriptions_response,
+                self:readCache(self:cacheKey("tags"), self:getCacheTtl("tags"), true)
+            )
+            return
+        end
+        self:registerPendingJob("tags", tags_job)
+
+        local function poll()
+            if self.state == "closed"
+                or not self:isJobTokenCurrent("subscriptions", token)
+                or self.pending_jobs.tags ~= tags_job then
+                self:cancelPendingJob("tags", tags_job)
+                return
+            end
+            local done, tags_response = tags_job:poll()
+            if not done then
+                UIManager:scheduleIn(0.1, poll)
+                return
+            end
+            self:clearPendingJob("tags", tags_job)
+            self:applyResponseSession(tags_response)
+            if tags_response and tags_response.code == 401 then
+                self:handleUnauthorized()
+                return
+            end
+            local tags_json = tags_response and tags_response.code == 200 and tags_response.json or nil
+            if tags_json then
+                self:writeCache(self:cacheKey("tags"), tags_json)
+            else
+                tags_json = self:readCache(self:cacheKey("tags"), self:getCacheTtl("tags"), true)
+            end
+            pollUnreadCounts(subscriptions_response, tags_json)
+        end
+
+        poll()
     end
 
     local function pollSubscriptions()
@@ -323,7 +373,7 @@ function methods:startSubscriptionsLoad(options)
             return
         end
         self:writeCache(self:cacheKey("subscriptions"), response.json)
-        pollUnreadCounts(response)
+        pollTags(response)
     end
 
     pollSubscriptions()
@@ -381,6 +431,7 @@ function methods:openHome(options)
         return
     end
     local cached_subscriptions, subscriptions_cache_fresh = self:getSubscriptionsCacheState()
+    local cached_tags, tags_cache_fresh = self:getTagsCacheState()
     local has_cache = self:showGroupsFromCache()
     if not NetworkMgr:isOnline() then
         return
@@ -390,6 +441,8 @@ function methods:openHome(options)
         or not has_cache
         or not cached_subscriptions
         or not subscriptions_cache_fresh
+        or not cached_tags
+        or not tags_cache_fresh
     if should_force_full_load or not has_cache then
         self.state = "loading"
         self:showLoading(_("Loading"))
