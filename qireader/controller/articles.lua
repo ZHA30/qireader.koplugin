@@ -574,6 +574,12 @@ function methods:refreshSubscriptionsAfterArticleListClosed()
     if had_local_changes or not self.settings.cookie or not NetworkMgr:isOnline() then
         return
     end
+    local cached_subscriptions, subscriptions_cache_fresh = self:getSubscriptionsCacheState()
+    local cached_tags, tags_cache_fresh = self:getTagsCacheState()
+    if cached_subscriptions and subscriptions_cache_fresh and cached_tags and tags_cache_fresh then
+        self:startUnreadCountsLoad()
+        return
+    end
     self.state = "loading"
     if self.setGroupsPlaceholderState then
         self:setGroupsPlaceholderState("loading", _("Loading"))
