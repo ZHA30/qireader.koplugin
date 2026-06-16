@@ -377,6 +377,8 @@ function methods:showMenuDialog()
         end
         UIManager:close(dialog)
     end
+    local is_tag_stream = self.controller.isArticleTagTarget
+        and self.controller:isArticleTagTarget(self.target)
     local buttons = {
         {{
             text = self.controller:getArticleSettingsScopeText(self.target),
@@ -396,7 +398,9 @@ function methods:showMenuDialog()
             end,
             align = "left",
         }},
-        {{
+    }
+    if not is_tag_stream then
+        table.insert(buttons, {{
             text = self.controller:getArticleSetting(self.target, "order_oldest_first")
                 and _("Oldest first: On")
                 or _("Oldest first: Off"),
@@ -405,8 +409,8 @@ function methods:showMenuDialog()
                 self.controller:toggleArticleOrder(self.target, self)
             end,
             align = "left",
-        }},
-        {{
+        }})
+        table.insert(buttons, {{
             text = self.controller:getArticleSetting(self.target, "mark_read_on_page_turn")
                 and _("Mark on page turn: On")
                 or _("Mark on page turn: Off"),
@@ -415,29 +419,29 @@ function methods:showMenuDialog()
                 self.controller:toggleMarkReadOnPageTurn(self.target, self)
             end,
             align = "left",
-        }},
-        {{
-            text = string.format(_("Items per page: %d"), self:getPerPage()),
-            callback = function()
-                closeDialog()
-                self.controller:showArticleNumberPicker(
-                    self.target,
-                    self,
-                    "items_per_page",
-                    _("Items per page"),
-                    {
-                        value_min = 1,
-                        value_max = 20,
-                        default_value = 5,
-                        on_apply = function(widget)
-                            self.controller:refreshArticleWidgetLayout(widget)
-                        end,
-                    }
-                )
-            end,
-            align = "left",
-        }},
-    }
+        }})
+    end
+    table.insert(buttons, {{
+        text = string.format(_("Items per page: %d"), self:getPerPage()),
+        callback = function()
+            closeDialog()
+            self.controller:showArticleNumberPicker(
+                self.target,
+                self,
+                "items_per_page",
+                _("Items per page"),
+                {
+                    value_min = 1,
+                    value_max = 20,
+                    default_value = 5,
+                    on_apply = function(widget)
+                        self.controller:refreshArticleWidgetLayout(widget)
+                    end,
+                }
+            )
+        end,
+        align = "left",
+    }})
     table.insert(buttons, {{
         text = string.format(_("Title font size: %d"), self:getTitleFontSize()),
         callback = function()

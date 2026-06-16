@@ -11,6 +11,7 @@ local ARTICLE_SETTINGS_SCHEMA = {
     "items_per_page",
     "title_font_size",
 }
+local TAG_STREAM_PREFIX = "tag-"
 
 local function copyArticleSettings(source)
     local result = {}
@@ -21,7 +22,21 @@ local function copyArticleSettings(source)
     return result
 end
 
-local function requiresArticleRemoteReload(left, right)
+local function isArticleTagTarget(target)
+    if not target then
+        return false
+    end
+    if target.kind == "tag" or target.kind == "readlater" then
+        return true
+    end
+    local stream_id = target.stream_id and tostring(target.stream_id) or ""
+    return stream_id:sub(1, #TAG_STREAM_PREFIX) == TAG_STREAM_PREFIX
+end
+
+local function requiresArticleRemoteReload(target, left, right)
+    if isArticleTagTarget(target) then
+        return left.show_unread_only ~= right.show_unread_only
+    end
     return left.show_unread_only ~= right.show_unread_only
         or left.order_oldest_first ~= right.order_oldest_first
 end
@@ -95,7 +110,15 @@ function methods:getArticleSettingsScopeText(target)
     return _("Config: Global")
 end
 
+function methods.isArticleTagTarget(_self, target)
+    return isArticleTagTarget(target)
+end
+
 function methods:getArticleSetting(target, key)
+    if self:isArticleTagTarget(target)
+        and (key == "order_oldest_first" or key == "mark_read_on_page_turn") then
+        return false
+    end
     local settings = self:getEffectiveArticleSettings(target)
     return settings and settings[key] or nil
 end
@@ -111,7 +134,8 @@ function methods:setArticleSetting(target, key, value)
 end
 
 function methods:refreshArticleWidgetBySettingsDiff(widget, previous_settings, next_settings)
-    if requiresArticleRemoteReload(previous_settings, next_settings) then
+    local target = widget and widget.target or nil
+    if requiresArticleRemoteReload(target, previous_settings, next_settings) then
         self:refreshArticleWidget(widget)
         return
     end
@@ -166,12 +190,18 @@ function methods:toggleArticleUnreadOnly(target, widget)
 end
 
 function methods:toggleArticleOrder(target, widget)
+    if self:isArticleTagTarget(target) then
+        return
+    end
     local current_value = self:getArticleSetting(target, "order_oldest_first") == true
     self:setArticleSetting(target, "order_oldest_first", not current_value)
     self:refreshArticleWidget(widget)
 end
 
 function methods:toggleMarkReadOnPageTurn(target, widget)
+    if self:isArticleTagTarget(target) then
+        return
+    end
     local current_value = self:getArticleSetting(target, "mark_read_on_page_turn") == true
     self:setArticleSetting(target, "mark_read_on_page_turn", not current_value)
     if widget then

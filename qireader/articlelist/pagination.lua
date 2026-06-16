@@ -74,13 +74,20 @@ function methods:setupItemMetrics()
 end
 
 function methods:buildStreamQuery(cursor)
-    local oldest_first = self.controller:getArticleSetting(self.target, "order_oldest_first") == true
+    local is_tag_stream = self.controller.isArticleTagTarget
+        and self.controller:isArticleTagTarget(self.target)
+    local oldest_first = (not is_tag_stream)
+        and self.controller:getArticleSetting(self.target, "order_oldest_first") == true
     local unread_only = self.controller:getArticleSetting(self.target, "show_unread_only") == true
     local query = {
         count = self:getRemoteBatchSize(),
         articleOrder = oldest_first and 1 or 0,
         unreadOnly = unread_only and true or nil,
     }
+    if is_tag_stream then
+        query.id = self:getStreamId()
+        query.unreadOnly = unread_only
+    end
     if cursor then
         if oldest_first then
             query.newerThan = cursor

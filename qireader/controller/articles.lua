@@ -664,7 +664,9 @@ end
 
 function methods:maybeMarkArticlePageRead(page)
     local target = getArticlePageTarget(page)
-    if not page or self:getArticleSetting(target, "mark_read_on_page_turn") ~= true then
+    if not page
+        or self:isArticleTagTarget(target)
+        or self:getArticleSetting(target, "mark_read_on_page_turn") ~= true then
         return false
     end
     return self:markPageRead(page)
@@ -673,6 +675,7 @@ end
 function methods:canMarkArticlePageRead(page)
     local target = getArticlePageTarget(page)
     return NetworkMgr:isOnline()
+        and not self:isArticleTagTarget(target)
         and self:getArticleSetting(target, "mark_read_on_page_turn") == true
         and articlePageHasUnreadEntries(page)
 end
