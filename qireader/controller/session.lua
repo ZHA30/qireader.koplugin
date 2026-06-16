@@ -329,8 +329,7 @@ function methods:startSubscriptionsLoad(options)
     pollSubscriptions()
 end
 
-function methods:startUnreadCountsLoad(options)
-    options = options or {}
+function methods:startUnreadCountsLoad()
     if not self.subscriptions or #self.subscriptions == 0 then
         return false
     end
@@ -402,9 +401,7 @@ function methods:openHome(options)
         })
         return
     end
-    self:startUnreadCountsLoad({
-        refresh_existing = true,
-    })
+    self:startUnreadCountsLoad()
 end
 
 return methods

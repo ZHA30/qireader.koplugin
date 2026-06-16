@@ -2,6 +2,9 @@
 
 local Settings = {}
 
+local OLD_CONTENT_PREFETCH_PAGES = 2
+local OLD_CONTENT_PREFETCH_COUNT = 10
+
 local function deepCopy(value)
     if type(value) ~= "table" then
         return value
@@ -35,8 +38,8 @@ Settings.cache_defaults = {
     content_ttl = 2592000,
     readlater_tag_ttl = 86400,
     fulltext_ttl = 2592000,
-    content_prefetch_pages = 2,
-    content_prefetch_count = 10,
+    content_prefetch_pages = 1,
+    content_prefetch_count = 3,
     stream_preload_pages_before_end = 2,
 }
 
@@ -121,10 +124,24 @@ local function cleanupDeprecatedSettings(settings)
     end
 end
 
+local function migrateCacheSettings(settings)
+    local cache = settings.cache
+    if type(cache) ~= "table" then
+        return
+    end
+    if cache.content_prefetch_pages == OLD_CONTENT_PREFETCH_PAGES then
+        cache.content_prefetch_pages = Settings.cache_defaults.content_prefetch_pages
+    end
+    if cache.content_prefetch_count == OLD_CONTENT_PREFETCH_COUNT then
+        cache.content_prefetch_count = Settings.cache_defaults.content_prefetch_count
+    end
+end
+
 function Settings.load()
     local settings = G_reader_settings:readSetting("qireader", deepCopy(Settings.defaults))
     migrateArticleSettings(settings)
     mergeDefaults(settings, Settings.defaults)
+    migrateCacheSettings(settings)
     cleanupDeprecatedSettings(settings)
     return settings
 end

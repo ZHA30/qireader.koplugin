@@ -1,12 +1,77 @@
 local buffer = require("string.buffer")
+local DataStorage = require("datastorage")
 local ffiutil = require("ffi/util")
 local UIManager = require("ui/uimanager")
+local util = require("util")
 
 local Background = {}
 Background.__index = Background
 
+local DEFAULT_TIMEOUT_SECONDS = 45
+local RESULT_DIR = DataStorage:getDataDir() .. "/cache/qireader-background"
+local job_counter = 0
+local result_dir_cleaned = false
+
+local function timeoutResponse()
+    return {
+        code = 0,
+        status = "request timeout",
+        body = "",
+        json = nil,
+        cookie = nil,
+    }
+end
+
+local function errorResponse(status)
+    return {
+        code = 0,
+        status = status or "decode failed",
+        body = "",
+        json = nil,
+        cookie = nil,
+    }
+end
+
+local function newResultPath()
+    if not result_dir_cleaned then
+        ffiutil.purgeDir(RESULT_DIR)
+        result_dir_cleaned = true
+    end
+    if not util.makePath(RESULT_DIR) then
+        return nil, "failed creating result directory"
+    end
+    job_counter = job_counter + 1
+    return string.format("%s/%d-%d.dat", RESULT_DIR, os.time(), job_counter)
+end
+
+local function writeResult(path, value)
+    local handle = io.open(path, "wb")
+    if not handle then
+        return false
+    end
+    handle:write(value)
+    handle:close()
+    return true
+end
+
+local function readResult(path)
+    local handle = io.open(path, "rb")
+    if not handle then
+        return nil
+    end
+    local payload = handle:read("*a")
+    handle:close()
+    os.remove(path)
+    return payload
+end
+
 local function newJob(client_settings, request_spec)
-    local pid, read_fd = ffiutil.runInSubProcess(function(_pid, write_fd)
+    local result_path, result_path_error = newResultPath()
+    if not result_path then
+        return nil, result_path_error
+    end
+
+    local pid, err = ffiutil.runInSubProcess(function()
         local Client = require("qireader.client")
         local client = Client.new{
             api_base = client_settings.api_base,
@@ -25,7 +90,7 @@ local function newJob(client_settings, request_spec)
         ))
         local ok, encoded = pcall(buffer.encode, results)
         if ok then
-            ffiutil.writeToFD(write_fd, encoded, true)
+            writeResult(result_path, encoded)
         else
             local fallback = buffer.encode({
                 n = 1,
@@ -37,17 +102,20 @@ local function newJob(client_settings, request_spec)
                     cookie = nil,
                 },
             })
-            ffiutil.writeToFD(write_fd, fallback, true)
+            writeResult(result_path, fallback)
         end
-    end, true)
+    end)
 
     if not pid then
-        return nil, read_fd
+        os.remove(result_path)
+        return nil, err
     end
 
     return setmetatable({
         pid = pid,
-        read_fd = read_fd,
+        result_path = result_path,
+        started_at = os.time(),
+        timeout_seconds = tonumber(request_spec.timeout) or DEFAULT_TIMEOUT_SECONDS,
         cancelled = false,
         collected = false,
         collect_scheduled = false,
@@ -67,10 +135,14 @@ function Background:cancel()
     self:collectLater()
 end
 
-function Background:_closeReadFD()
-    if self.read_fd then
-        ffiutil.readAllFromFD(self.read_fd)
-        self.read_fd = nil
+function Background:isTimedOut()
+    return self.timeout_seconds > 0 and os.time() - self.started_at >= self.timeout_seconds
+end
+
+function Background:_removeResult()
+    if self.result_path then
+        os.remove(self.result_path)
+        self.result_path = nil
     end
 end
 
@@ -86,15 +158,11 @@ function Background:collectLater(delay)
             return
         end
         if ffiutil.isSubProcessDone(self.pid) then
-            self:_closeReadFD()
+            self:_removeResult()
             self.pid = nil
             self.collected = true
             self.collect_scheduled = false
             return
-        end
-        if self.read_fd and ffiutil.getNonBlockingReadSize(self.read_fd) ~= 0 then
-            ffiutil.readAllFromFD(self.read_fd)
-            self.read_fd = nil
         end
         UIManager:scheduleIn(delay, collect)
     end
@@ -107,36 +175,31 @@ function Background:poll()
     end
 
     local subprocess_done = ffiutil.isSubProcessDone(self.pid)
-    local stuff_to_read = self.read_fd and ffiutil.getNonBlockingReadSize(self.read_fd) ~= 0
 
-    if not subprocess_done and not stuff_to_read then
+    if not subprocess_done and self:isTimedOut() then
+        self:cancel()
+        return true, timeoutResponse(), "timeout"
+    end
+
+    if not subprocess_done then
         return false
     end
 
     self.collected = true
     local response
-    if stuff_to_read then
-        local payload = ffiutil.readAllFromFD(self.read_fd)
-        self.read_fd = nil
+    if self.result_path then
+        local payload = readResult(self.result_path)
+        self.result_path = nil
         local ok, decoded = pcall(buffer.decode, payload)
         if ok and decoded and decoded[1] then
             response = decoded[1]
         else
-            response = {
-                code = 0,
-                status = "decode failed",
-                body = "",
-                json = nil,
-                cookie = nil,
-            }
-        end
-        if not subprocess_done then
-            self:collectLater()
+            response = errorResponse(payload and "decode failed" or "no response")
         end
     else
-        self:_closeReadFD()
-        response = nil
+        response = errorResponse("no response")
     end
+    self.pid = nil
 
     if self.cancelled then
         return true, response, "cancelled"

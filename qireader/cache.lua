@@ -1,5 +1,6 @@
 local CacheSQLite = require("cachesqlite")
 local DataStorage = require("datastorage")
+local ffiutil = require("ffi/util")
 local util = require("util")
 
 local Cache = {}
@@ -7,6 +8,7 @@ Cache.__index = Cache
 
 local CACHE_DIR = DataStorage:getDataDir() .. "/cache"
 local CACHE_PATH = CACHE_DIR .. "/qireader.sqlite"
+local BACKGROUND_RESULT_DIR = CACHE_DIR .. "/qireader-background"
 
 local function escapeComponent(value)
     return tostring(value or "")
@@ -128,6 +130,7 @@ function Cache.deleteStorage()
     os.remove(CACHE_PATH)
     os.remove(CACHE_PATH .. "-wal")
     os.remove(CACHE_PATH .. "-shm")
+    ffiutil.purgeDir(BACKGROUND_RESULT_DIR)
 end
 
 return Cache

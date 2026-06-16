@@ -111,7 +111,7 @@ function Client:request(method, path, options)
         url = url,
         method = method,
         headers = headers,
-        sink = ltn12.sink.table(sink),
+        sink = socketutil.table_sink(sink),
     }
     if body then
         request.source = ltn12.source.string(body)
@@ -131,6 +131,10 @@ function Client:request(method, path, options)
         }
     end
     code, response_headers, status = socket.skip(1, request_result, code, response_headers, status)
+    if request_result == nil and status == nil then
+        status = tostring(code or "Network request failed")
+        response_headers = nil
+    end
 
     local response_body = table.concat(sink)
     local json = decodeJson(response_body)
@@ -142,8 +146,8 @@ function Client:request(method, path, options)
     return {
         code = tonumber(code) or 0,
         status = status,
-        headers = response_headers,
-        body = response_body,
+        headers = options.include_headers and response_headers or nil,
+        body = options.include_body and response_body or "",
         json = json,
         cookie = cookie,
     }

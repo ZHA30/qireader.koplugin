@@ -545,7 +545,7 @@ end
 
 function methods:getContentPrefetchLimit()
     local cache_settings = self.controller and self.controller.settings and self.controller.settings.cache or {}
-    return math.max(1, tonumber(cache_settings.content_prefetch_count) or 10)
+    return math.max(1, tonumber(cache_settings.content_prefetch_count) or 3)
 end
 
 function methods:getContentPrefetchEntriesFromIndex(start_index, max_entries)
@@ -565,7 +565,7 @@ end
 function methods:getContentPrefetchEntries()
     local entries = {}
     local cache_settings = self.controller and self.controller.settings and self.controller.settings.cache or {}
-    local page_count = math.max(1, tonumber(cache_settings.content_prefetch_pages) or 2)
+    local page_count = math.max(1, tonumber(cache_settings.content_prefetch_pages) or 1)
     local max_entries = self:getContentPrefetchLimit()
     local last_page = math.min(self.pages or self.show_page, self.show_page + page_count - 1)
     for page_number = self.show_page, last_page do
