@@ -407,7 +407,7 @@ end
 
 ArticleContent.DEFAULT_CSS_TEMPLATE = [[
 @page {
-    margin: 0.35em 0.6em 0.45em 0.6em;
+    margin: 0.55em 0.72em 0.6em 0.72em;
 }
 
 html, body {
@@ -416,8 +416,11 @@ html, body {
 }
 
 body {
-    line-height: 1.45;
+    line-height: 1.52;
+    text-align: left;
+    color: black;
 }
+
 p, div, section, article, main, header, footer, aside,
 blockquote, ul, ol, pre {
     margin: 0;
@@ -425,43 +428,50 @@ blockquote, ul, ol, pre {
 
 p + *, div + *, section + *, article + *, main + *,
 blockquote + *, ul + *, ol + *, pre + * {
-    margin-top: 0.62em;
+    margin-top: 0.68em;
+}
+
+p + p {
+    margin-top: 0.58em;
 }
 
 h1, h2, h3, h4, h5, h6 {
     font-weight: bold;
-    line-height: 1.25;
-    margin: 0.75em 0 0.35em 0;
+    line-height: 1.28;
+    margin: 0.85em 0 0.38em 0;
 }
 h1 {
-    font-size: 1.35em;
-    margin-top: 0.2em;
+    font-size: 1.32em;
+    margin-top: 0.15em;
 }
-h2 { font-size: 1.22em; }
-h3 { font-size: 1.12em; }
+h2 { font-size: 1.2em; }
+h3 { font-size: 1.11em; }
 h4, h5, h6 { font-size: 1.05em; }
 
 .article-meta, .meta-line, header, footer, aside {
-    font-size: 0.86em;
+    font-size: 0.84em;
     line-height: 1.35;
+    color: #444;
 }
 
 blockquote {
-    margin-left: 0.45em;
-    padding-left: 0.6em;
-    border-left: 0.08em solid #777;
+    margin: 0.85em 0 0.85em 0.35em;
+    padding-left: 0.65em;
+    border-left: 0.1em solid #777;
+    color: #333;
 }
 
 ul, ol {
-    padding-left: 1.45em;
+    padding-left: 1.35em;
+    margin-top: 0.5em;
 }
 
 li {
-    margin: 0.15em 0;
+    margin: 0.24em 0;
 }
 
 li p, li div {
-    margin: 0.15em 0;
+    margin: 0.18em 0;
 }
 
 pre, code {
@@ -470,8 +480,10 @@ pre, code {
 }
 
 pre {
-    padding: 0.35em 0.45em;
+    margin: 0.85em 0;
+    padding: 0.45em 0.55em;
     border: 0.05em solid #999;
+    line-height: 1.35;
 }
 
 code {
@@ -479,7 +491,8 @@ code {
 }
 
 hr {
-    margin: 0.8em 0;
+    margin: 1em 0;
+    color: #999;
 }
 
 a {
@@ -487,10 +500,13 @@ a {
 }
 
 .media-placeholder {
-    margin: 0.75em 0;
-    font-size: 0.9em;
+    margin: 0.9em 0;
+    padding: 0.25em 0.35em;
+    font-size: 0.88em;
     font-style: italic;
     text-align: center;
+    color: #555;
+    border: 0.05em solid #aaa;
 }
 ]]
 
