@@ -9,7 +9,9 @@ local methods = {}
 local ARTICLE_CONTENT_JOB_KEY = "article_content"
 local CONTENT_PREFETCH_JOB_PREFIX = "article_content_prefetch:"
 local PAGE_READ_MARK_JOB_PREFIX = "page_mark_read:"
-local READ_MARK_JOB_PREFIX = "article_mark_read:"
+local MARKER_OUTBOX_READ_JOB_PREFIX = "marker_outbox_read:"
+local MARKER_OUTBOX_UNREAD_JOB_PREFIX = "marker_outbox_unread:"
+local MARKER_OUTBOX_FLUSH_DELAY = 2
 local FULL_TEXT_API_URL = "https://nettools3.oxyry.com/text"
 local FULL_TEXT_JOB_PREFIX = "article_full_text:"
 
@@ -102,6 +104,29 @@ local function articlePageHasUnreadEntries(page)
         end
     end
     return false
+end
+
+local function addPendingEntryId(queue, entry_id)
+    if not queue or entry_id == nil then
+        return
+    end
+    queue[tostring(entry_id)] = entry_id
+end
+
+local function drainPendingEntryIds(queue)
+    local entry_ids = {}
+    for key, entry_id in pairs(queue or {}) do
+        entry_ids[#entry_ids + 1] = entry_id
+        queue[key] = nil
+    end
+    table.sort(entry_ids, function(left, right)
+        return tostring(left) < tostring(right)
+    end)
+    return entry_ids
+end
+
+local function hasPendingEntryIds(queue)
+    return next(queue or {}) ~= nil
 end
 
 function methods:getArticleContentCacheKey(target, entry)
@@ -371,6 +396,12 @@ function methods:onArticleListClosed(widget)
     if self.article_widget == widget then
         self.article_widget = nil
     end
+    if self.flushMarkerOutbox then
+        self:flushMarkerOutbox()
+    end
+    if self.flushStreamCacheGeneration then
+        self:flushStreamCacheGeneration()
+    end
     self:cancelArticleContentLoads(widget and widget.target or nil)
     if widget and widget.closeDetailWidget then
         widget:closeDetailWidget()
@@ -423,6 +454,116 @@ function methods:onArticleDetailClosed(widget)
     self:cancelPendingJob(ARTICLE_CONTENT_JOB_KEY)
     self:cancelArticleFullText(widget and widget.entry or nil)
     UIManager:close(widget)
+end
+
+function methods:sendMarkerOutboxRequest(method, entry_ids, job_prefix)
+    if #entry_ids == 0 then
+        return true
+    end
+    local job = self:createBackgroundRequest({
+        method = method,
+        path = "/markers/reads",
+        body = {
+            type = "entries",
+            entryIds = entry_ids,
+        },
+    })
+    if not job then
+        self:showTransientMessage(_("Cannot update read state."))
+        return false
+    end
+    local job_key = buildEntryIdsJobKey(job_prefix, entry_ids)
+    local job_token = self:nextJobToken(job_key)
+    self:registerPendingJob(job_key, job)
+    local function poll()
+        if self.state == "closed"
+            or not self:isJobTokenCurrent(job_key, job_token)
+            or self.pending_jobs[job_key] ~= job then
+            self:cancelPendingJob(job_key, job)
+            return
+        end
+        local done, response, err = job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, poll)
+            return
+        end
+        self:clearPendingJob(job_key, job)
+        if err == "cancelled" then
+            return
+        end
+        if self.state == "closed" or not self:isJobTokenCurrent(job_key, job_token) then
+            return
+        end
+        self:applyResponseSession(response)
+        local response_code = response and response.code or 0
+        if response_code == 401 then
+            self:handleUnauthorized()
+        elseif response_code < 200 or response_code >= 300 then
+            self:showTransientMessage(_("Cannot update read state."))
+        end
+    end
+    poll()
+    return true
+end
+
+function methods:flushMarkerOutbox()
+    self.marker_outbox_flush_scheduled = false
+    if self.state == "closed" then
+        return false
+    end
+    if not hasPendingEntryIds(self.pending_read_entry_ids)
+        and not hasPendingEntryIds(self.pending_unread_entry_ids) then
+        return false
+    end
+    if not NetworkMgr:isOnline() then
+        self:showTransientMessage(_("Cannot update read state."))
+        return false
+    end
+    local read_ids = drainPendingEntryIds(self.pending_read_entry_ids)
+    local unread_ids = drainPendingEntryIds(self.pending_unread_entry_ids)
+    if #read_ids == 0 and #unread_ids == 0 then
+        return false
+    end
+    if not self:sendMarkerOutboxRequest("PUT", read_ids, MARKER_OUTBOX_READ_JOB_PREFIX) then
+        for i = 1, #read_ids do
+            addPendingEntryId(self.pending_read_entry_ids, read_ids[i])
+        end
+    end
+    if not self:sendMarkerOutboxRequest("DELETE", unread_ids, MARKER_OUTBOX_UNREAD_JOB_PREFIX) then
+        for i = 1, #unread_ids do
+            addPendingEntryId(self.pending_unread_entry_ids, unread_ids[i])
+        end
+    end
+    return true
+end
+
+function methods:scheduleMarkerOutboxFlush()
+    if self.marker_outbox_flush_scheduled then
+        return
+    end
+    self.marker_outbox_flush_scheduled = true
+    UIManager:scheduleIn(MARKER_OUTBOX_FLUSH_DELAY, function()
+        if self.marker_outbox_flush_scheduled then
+            self:flushMarkerOutbox()
+        end
+    end)
+end
+
+function methods:enqueueMarkerWrite(entry_id, read)
+    if entry_id == nil then
+        return
+    end
+    self.pending_read_entry_ids = self.pending_read_entry_ids or {}
+    self.pending_unread_entry_ids = self.pending_unread_entry_ids or {}
+    local entry_id_key = tostring(entry_id)
+    if read then
+        self.pending_unread_entry_ids[entry_id_key] = nil
+        addPendingEntryId(self.pending_read_entry_ids, entry_id)
+    else
+        self.pending_read_entry_ids[entry_id_key] = nil
+        addPendingEntryId(self.pending_unread_entry_ids, entry_id)
+    end
+    self:scheduleMarkerOutboxFlush()
 end
 
 function methods:markPageRead(page)
@@ -561,45 +702,7 @@ function methods:markArticleRead(entry)
     if not self:applyArticleReadState(entry) then
         return
     end
-    local job_key = READ_MARK_JOB_PREFIX .. tostring(entry.id)
-    local job_token = self:nextJobToken(job_key)
-    local job = self:createBackgroundRequest({
-        method = "PUT",
-        path = "/markers/reads",
-        body = {
-            type = "entries",
-            entryIds = { entry.id },
-        },
-    })
-    if not job then
-        return
-    end
-    self:registerPendingJob(job_key, job)
-    local function poll()
-        if self.state == "closed"
-            or not self:isJobTokenCurrent(job_key, job_token)
-            or self.pending_jobs[job_key] ~= job then
-            self:cancelPendingJob(job_key, job)
-            return
-        end
-        local done, response, err = job:poll()
-        if not done then
-            UIManager:scheduleIn(0.1, poll)
-            return
-        end
-        self:clearPendingJob(job_key, job)
-        if err == "cancelled" then
-            return
-        end
-        if self.state == "closed" or not self:isJobTokenCurrent(job_key, job_token) then
-            return
-        end
-        self:applyResponseSession(response)
-        if response and response.code == 401 then
-            self:handleUnauthorized()
-        end
-    end
-    poll()
+    self:enqueueMarkerWrite(entry.id, true)
 end
 
 function methods:markArticleUnread(entry)
@@ -620,46 +723,7 @@ function methods:markArticleUnread(entry)
     end
     self:adjustSubscriptionUnreadCounts({ entry }, 1)
     self:invalidateStreamCache()
-
-    local job_key = READ_MARK_JOB_PREFIX .. tostring(entry.id) .. ":unread"
-    local job_token = self:nextJobToken(job_key)
-    local job = self:createBackgroundRequest({
-        method = "DELETE",
-        path = "/markers/reads",
-        body = {
-            type = "entries",
-            entryIds = { entry.id },
-        },
-    })
-    if not job then
-        return
-    end
-    self:registerPendingJob(job_key, job)
-    local function poll()
-        if self.state == "closed"
-            or not self:isJobTokenCurrent(job_key, job_token)
-            or self.pending_jobs[job_key] ~= job then
-            self:cancelPendingJob(job_key, job)
-            return
-        end
-        local done, response, err = job:poll()
-        if not done then
-            UIManager:scheduleIn(0.1, poll)
-            return
-        end
-        self:clearPendingJob(job_key, job)
-        if err == "cancelled" then
-            return
-        end
-        if self.state == "closed" or not self:isJobTokenCurrent(job_key, job_token) then
-            return
-        end
-        self:applyResponseSession(response)
-        if response and response.code == 401 then
-            self:handleUnauthorized()
-        end
-    end
-    poll()
+    self:enqueueMarkerWrite(entry.id, false)
 end
 
 function methods:toggleArticleReadState(entry)

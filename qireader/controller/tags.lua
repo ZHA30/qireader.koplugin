@@ -132,6 +132,21 @@ local function getTagsPopoverWidth(tags, checkmark_width)
     return math.max(min_width, math.min(screen_limit, desired_width))
 end
 
+local function makeTagsPopoverSignature(tags, checkmark_width)
+    local parts = {
+        tostring(checkmark_width or 0),
+        tostring(Screen:getWidth()),
+        tostring(Screen:getHeight()),
+        tostring(#(tags or {})),
+    }
+    for i = 1, #(tags or {}) do
+        local tag = tags[i]
+        parts[#parts + 1] = tostring(tag and tag.id or "")
+        parts[#parts + 1] = tostring(tag and tag.label or "")
+    end
+    return table.concat(parts, "\31")
+end
+
 local TagPopover = InputContainer:extend{
     modal = true,
     entry = nil,
@@ -280,12 +295,36 @@ function methods:syncReadLaterEntry(entry)
     entry.is_read_later = getReadLaterFlag(entry, self.readlater_tag_id)
 end
 
+function methods:invalidateTagCaches()
+    self.regular_tag_ids = nil
+    self.tags_popover_width = nil
+    self.tags_popover_signature = nil
+end
+
+function methods:getRegularTagIdSet()
+    if not self.regular_tag_ids then
+        self.regular_tag_ids = makeRegularTagIdSet(self.tags)
+    end
+    return self.regular_tag_ids
+end
+
+function methods:getCachedTagsPopoverWidth(tags, checkmark_width)
+    local signature = makeTagsPopoverSignature(tags, checkmark_width)
+    if self.tags_popover_signature == signature and self.tags_popover_width then
+        return self.tags_popover_width
+    end
+    local width = getTagsPopoverWidth(tags, checkmark_width)
+    self.tags_popover_signature = signature
+    self.tags_popover_width = width
+    return width
+end
+
 function methods:syncArticleTagEntry(entry)
     if not entry then
         return
     end
     self:syncReadLaterEntry(entry)
-    entry.has_tags = hasRegularTag(entry.tag_ids or {}, makeRegularTagIdSet(self.tags), self.readlater_tag_id)
+    entry.has_tags = hasRegularTag(entry.tag_ids or {}, self:getRegularTagIdSet(), self.readlater_tag_id)
 end
 
 function methods:refreshArticleTagWidgets()
@@ -680,7 +719,7 @@ function methods:showArticleTagsDialog(entry, widget, ges)
         tags = tags,
         selected = selected,
         anchor = getGestureAnchor(ges),
-        width = getTagsPopoverWidth(tags, checkmark_width),
+        width = self:getCachedTagsPopoverWidth(tags, checkmark_width),
     }
     if widget then
         widget.active_dialog = dialog

@@ -107,6 +107,14 @@ local function normalizeTags(data)
     return tags, readlater_tag, has_tags_payload
 end
 
+local function putMapValue(map, key, value)
+    if key == nil then
+        return
+    end
+    map[key] = value
+    map[tostring(key)] = value
+end
+
 local function findSubscriptionByEntry(controller, entry)
     local target = entry and entry.target or nil
     if target and target.subscription then
@@ -116,6 +124,16 @@ local function findSubscriptionByEntry(controller, entry)
         or (entry.raw and entry.raw.origin and entry.raw.origin.feedId))
     if feed_id == nil then
         return nil
+    end
+    local feed_id_key = tostring(feed_id)
+    local subscription_by_feed_id = controller.subscription_by_feed_id or {}
+    local subscription_by_id = controller.subscription_by_id or {}
+    local indexed_subscription = subscription_by_feed_id[feed_id]
+        or subscription_by_feed_id[feed_id_key]
+        or subscription_by_id[feed_id]
+        or subscription_by_id[feed_id_key]
+    if indexed_subscription then
+        return indexed_subscription
     end
     local subscriptions = controller.subscriptions or {}
     for i = 1, #subscriptions do
@@ -149,6 +167,33 @@ function methods:getTagsCacheState()
     return data, fresh == true
 end
 
+function methods:clearSubscriptionIndexes()
+    self.subscription_by_feed_id = {}
+    self.subscription_by_id = {}
+    self.subscription_title_by_feed_id = {}
+    self.subscription_title_by_id = {}
+end
+
+function methods:rebuildSubscriptionIndexes()
+    local subscription_by_feed_id = {}
+    local subscription_by_id = {}
+    local title_by_feed_id = {}
+    local title_by_id = {}
+    local subscriptions = self.subscriptions or {}
+    for i = 1, #subscriptions do
+        local subscription = subscriptions[i]
+        local title = subscription.title or subscription.feedUrl or tostring(subscription.id or "")
+        putMapValue(subscription_by_feed_id, subscription.feedId, subscription)
+        putMapValue(subscription_by_id, subscription.id, subscription)
+        putMapValue(title_by_feed_id, subscription.feedId, title)
+        putMapValue(title_by_id, subscription.id, title)
+    end
+    self.subscription_by_feed_id = subscription_by_feed_id
+    self.subscription_by_id = subscription_by_id
+    self.subscription_title_by_feed_id = title_by_feed_id
+    self.subscription_title_by_id = title_by_id
+end
+
 function methods:showGroups(data, tags_data, unread_data, options)
     options = options or {}
     self.state = "groups"
@@ -160,7 +205,14 @@ function methods:showGroups(data, tags_data, unread_data, options)
     self.groups = grouped.groups
     self.ungrouped = grouped.ungrouped
     self.subscriptions = grouped.subscriptions
+    self:rebuildSubscriptionIndexes()
     self.tags = tags
+    if self.invalidateTagCaches then
+        self:invalidateTagCaches()
+    end
+    if self.getRegularTagIdSet then
+        self:getRegularTagIdSet()
+    end
     if readlater_tag then
         self.readlater_tag = readlater_tag
         self.readlater_tag_id = readlater_tag.id
@@ -260,7 +312,11 @@ function methods:showGroupsFromCache()
     self.groups = {}
     self.ungrouped = {}
     self.subscriptions = {}
+    self:clearSubscriptionIndexes()
     self.tags = {}
+    if self.invalidateTagCaches then
+        self:invalidateTagCaches()
+    end
     self:showGroupsPage()
     return false
 end
@@ -324,10 +380,26 @@ function methods.buildArticleTarget(_self, row)
 end
 
 function methods:getSubscriptionTitleByFeedId(feed_id)
+    if feed_id == nil then
+        return ""
+    end
+    local feed_id_key = tostring(feed_id)
+    local title_by_feed_id = self.subscription_title_by_feed_id or {}
+    local title_by_id = self.subscription_title_by_id or {}
+    local indexed_title = title_by_feed_id[feed_id]
+        or title_by_feed_id[feed_id_key]
+        or title_by_id[feed_id]
+        or title_by_id[feed_id_key]
+    if indexed_title then
+        return indexed_title
+    end
     local subscriptions = self.subscriptions or {}
     for i = 1, #subscriptions do
         local subscription = subscriptions[i]
-        if subscription.feedId == feed_id or subscription.id == feed_id then
+        if subscription.feedId == feed_id
+            or subscription.id == feed_id
+            or tostring(subscription.feedId) == feed_id_key
+            or tostring(subscription.id) == feed_id_key then
             return subscription.title or subscription.feedUrl or tostring(subscription.id or "")
         end
     end

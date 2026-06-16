@@ -21,19 +21,32 @@ local function resetSubscriptions(controller)
     controller.groups = {}
     controller.ungrouped = {}
     controller.subscriptions = {}
+    if controller.clearSubscriptionIndexes then
+        controller:clearSubscriptionIndexes()
+    end
     controller.tags = {}
+    if controller.invalidateTagCaches then
+        controller:invalidateTagCaches()
+    end
     controller.readlater_tag = nil
     controller.readlater_tag_id = nil
 end
 
 local function clearSession(controller)
+    if controller.flushStreamCacheGeneration then
+        controller:flushStreamCacheGeneration()
+    end
     controller:clearCache()
     Settings.clearSession(controller.settings)
     controller.expanded_tags = false
     controller.readlater_tag = nil
     controller.readlater_tag_id = nil
     controller.readlater_tag_callbacks = nil
-    controller.settings.stream_cache_generation = 0
+    if controller.resetStreamCacheGeneration then
+        controller:resetStreamCacheGeneration(0)
+    else
+        controller.settings.stream_cache_generation = 0
+    end
     controller.save_settings()
     resetSubscriptions(controller)
 end
@@ -41,6 +54,9 @@ end
 local methods = {}
 
 function methods:close()
+    if self.flushStreamCacheGeneration then
+        self:flushStreamCacheGeneration()
+    end
     self.state = "closed"
     self:invalidateAllJobTokens()
     self:cancelAllPendingJobs()
