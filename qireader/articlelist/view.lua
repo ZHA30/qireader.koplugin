@@ -388,7 +388,9 @@ function methods:showMenuDialog()
             end,
             align = "left",
         }},
-        {{
+    }
+    if not is_tag_stream then
+        table.insert(buttons, {{
             text = self.controller:getArticleSetting(self.target, "show_unread_only")
                 and _("Unread only: On")
                 or _("Unread only: Off"),
@@ -397,9 +399,7 @@ function methods:showMenuDialog()
                 self.controller:toggleArticleUnreadOnly(self.target, self)
             end,
             align = "left",
-        }},
-    }
-    if not is_tag_stream then
+        }})
         table.insert(buttons, {{
             text = self.controller:getArticleSetting(self.target, "order_oldest_first")
                 and _("Oldest first: On")

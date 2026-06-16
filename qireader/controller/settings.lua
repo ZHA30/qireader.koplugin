@@ -116,7 +116,11 @@ end
 
 function methods:getArticleSetting(target, key)
     if self:isArticleTagTarget(target)
-        and (key == "order_oldest_first" or key == "mark_read_on_page_turn") then
+        and (
+            key == "show_unread_only"
+            or key == "order_oldest_first"
+            or key == "mark_read_on_page_turn"
+        ) then
         return false
     end
     local settings = self:getEffectiveArticleSettings(target)
@@ -184,6 +188,9 @@ function methods:refreshArticleWidgetLayout(widget)
 end
 
 function methods:toggleArticleUnreadOnly(target, widget)
+    if self:isArticleTagTarget(target) then
+        return
+    end
     local current_value = self:getArticleSetting(target, "show_unread_only") == true
     self:setArticleSetting(target, "show_unread_only", not current_value)
     self:refreshArticleWidget(widget)
