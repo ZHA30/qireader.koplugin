@@ -260,7 +260,12 @@ function TagPopover:onTapClose(_arg, ges)
 end
 
 local function refreshDetailWidget(widget)
-    if widget and not widget.closing and widget.refreshBottomButtons then
+    if not widget or widget.closing then
+        return
+    end
+    if widget.refreshBottomButtonStates then
+        widget:refreshBottomButtonStates()
+    elseif widget.refreshBottomButtons then
         widget:refreshBottomButtons()
         UIManager:setDirty(widget, function()
             return "partial", widget.movable and widget.movable.dimen or widget.frame.dimen
@@ -295,8 +300,10 @@ function methods:refreshArticleTagWidgets()
                 end
             end
         end
-        if not self.article_widget.closing then
-            self.article_widget:refresh()
+        if not self.article_widget.closing and self.article_widget.refreshVisibleArticleButtons then
+            self.article_widget:refreshVisibleArticleButtons({
+                repaint = not self.article_detail_widget,
+            })
         end
     end
     if self.article_detail_widget and self.article_detail_widget.entry then

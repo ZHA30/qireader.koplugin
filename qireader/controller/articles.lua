@@ -534,8 +534,10 @@ function methods:applyArticleReadState(entry)
                 end
             end
         end
-        if changed and not self.article_widget.closing then
-            self.article_widget:refresh()
+        if changed and not self.article_widget.closing and self.article_widget.refreshEntryButtons then
+            self.article_widget:refreshEntryButtons(entry, {
+                repaint = not self.article_detail_widget,
+            })
         end
     end
     if self.article_detail_widget
@@ -606,8 +608,10 @@ function methods:markArticleUnread(entry)
     end
 
     entry.status = 0
-    if self.article_widget and not self.article_widget.closing then
-        self.article_widget:refresh()
+    if self.article_widget and not self.article_widget.closing and self.article_widget.refreshEntryButtons then
+        self.article_widget:refreshEntryButtons(entry, {
+            repaint = not self.article_detail_widget,
+        })
     end
     if self.article_detail_widget
         and self.article_detail_widget.entry

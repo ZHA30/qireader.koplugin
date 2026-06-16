@@ -17,6 +17,7 @@ local Icons = require("qireader.icons")
 local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
+local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local Screen = Device.screen
@@ -33,6 +34,15 @@ local ARTICLE_STATUS_MIN_WIDTH = Screen:scaleBySize(20)
 local ARTICLE_BUTTON_MAX_FONT_SIZE = 20
 local ARTICLE_BUTTON_MIN_FONT_SIZE = 12
 local ARTICLE_ICON_SIZE = Icons.size.list
+
+local function repaintWidget(widget)
+    if widget and widget.dimen and widget.dimen.x and widget.dimen.y then
+        UIManager:widgetRepaint(widget, widget.dimen.x, widget.dimen.y)
+        UIManager:setDirty(nil, function()
+            return "ui", widget.dimen
+        end)
+    end
+end
 
 local ArticleContentTapArea = InputContainer:extend{
     width = nil,
@@ -101,6 +111,28 @@ function ArticleActionIconButton:onTapSelectAction(_arg, ges)
     return true
 end
 
+function ArticleActionIconButton:setIconState(icon_state, options)
+    if self.icon_state == icon_state then
+        return false
+    end
+    self.icon_state = icon_state
+    local old_icon = self.icon
+    self.icon = Icons.widget(self.icon_name, {
+        state = self.icon_state,
+        size = ARTICLE_ICON_SIZE,
+    })
+    if self.frame and self.frame[1] then
+        self.frame[1][1] = self.icon
+    end
+    if old_icon and old_icon.free then
+        old_icon:free()
+    end
+    if not options or options.repaint ~= false then
+        repaintWidget(self)
+    end
+    return true
+end
+
 local ArticleStatusIcon = InputContainer:extend{
     width = nil,
     height = nil,
@@ -110,9 +142,18 @@ local ArticleStatusIcon = InputContainer:extend{
 
 function ArticleStatusIcon:init()
     self.icon = Icons.widget(self.icon_name, { size = ARTICLE_ICON_SIZE })
-    self[1] = CenterContainer:new{
+    self.icon_container = CenterContainer:new{
         dimen = Geom:new{ w = self.width, h = self.height },
         self.icon,
+    }
+    self[1] = FrameContainer:new{
+        width = self.width,
+        height = self.height,
+        padding = 0,
+        margin = 0,
+        bordersize = 0,
+        background = Blitbuffer.COLOR_WHITE,
+        self.icon_container,
     }
     self.dimen = self[1]:getSize()
     self.ges_events = {
@@ -128,6 +169,25 @@ end
 function ArticleStatusIcon:onTapToggleStatus()
     if self.callback then
         self.callback()
+    end
+    return true
+end
+
+function ArticleStatusIcon:setIconName(icon_name, options)
+    if self.icon_name == icon_name then
+        return false
+    end
+    self.icon_name = icon_name
+    local old_icon = self.icon
+    self.icon = Icons.widget(self.icon_name, { size = ARTICLE_ICON_SIZE })
+    if self.icon_container then
+        self.icon_container[1] = self.icon
+    end
+    if old_icon and old_icon.free then
+        old_icon:free()
+    end
+    if not options or options.repaint ~= false then
+        repaintWidget(self)
     end
     return true
 end
@@ -301,6 +361,8 @@ function QiArticleItemWidget:rebuild()
     end
     local left_button_width = left_button:getSize().w
     local right_button_width = right_button:getSize().w
+    self.left_button = left_button
+    self.right_button = right_button
     local content_width = math.max(
         ARTICLE_ITEM_MIN_CONTENT_WIDTH,
         row_width - metrics.horizontal_padding * 2 - left_button_width - right_button_width - metrics.action_gap * 2
@@ -396,6 +458,30 @@ function QiArticleItemWidget:rebuild()
             HorizontalSpan:new{ width = metrics.horizontal_padding },
         },
     }
+end
+
+function QiArticleItemWidget:refreshActionButtons(options)
+    local item = self.item
+    local changed = false
+    if not item then
+        return false
+    end
+    if self.left_button then
+        if self.left_action == "read_later" and self.left_button.setIconState then
+            changed = self.left_button:setIconState(item.is_read_later and "active" or nil, options) or changed
+        elseif self.left_button.setIconName then
+            local icon_name = item.status == 0 and "article-unread" or "article-read"
+            changed = self.left_button:setIconName(icon_name, options) or changed
+        end
+    end
+    if self.right_button then
+        if self.right_action == "tags" and self.right_button.setIconState then
+            changed = self.right_button:setIconState(item.has_tags and "active" or nil, options) or changed
+        elseif self.right_button.setIconState then
+            changed = self.right_button:setIconState(item.is_read_later and "active" or nil, options) or changed
+        end
+    end
+    return changed
 end
 
 return {

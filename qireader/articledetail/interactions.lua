@@ -44,6 +44,10 @@ function methods:isReadLaterActive()
     return self.entry and self.entry.is_read_later == true or false
 end
 
+function methods:hasArticleTags()
+    return self.entry and self.entry.has_tags == true or false
+end
+
 function methods:isFullTextStateForCurrentEntry()
     local entry_id = self.entry and self.entry.id or nil
     return entry_id ~= nil and self.full_text_entry_id == entry_id
@@ -73,10 +77,7 @@ function methods:setFullTextState(state, entry_id)
     if self.full_text_state == "idle" then
         self.full_text_original = nil
     end
-    self:refreshBottomButtons()
-    UIManager:setDirty(self, function()
-        return "partial", self.movable and self.movable.dimen or self.frame.dimen
-    end)
+    self:refreshBottomButtonStates()
 end
 
 function methods:saveFullTextOriginal()
@@ -102,7 +103,7 @@ function methods:closeFullText()
     local original = self.full_text_original
     if not original or original.entry_id ~= entry_id then
         self:resetFullTextState(entry_id)
-        self:refreshBottomButtons()
+        self:refreshBottomButtonStates()
         return true
     end
     self.title = original.title or self.title
@@ -113,7 +114,7 @@ function methods:closeFullText()
     if self.titlebar then
         self.titlebar:setTitle(self.title)
     end
-    self:refreshBottomButtons()
+    self:refreshBottomButtonStates()
     self:rebuildContent()
     return true
 end
@@ -175,10 +176,13 @@ function methods:toggleReadLater()
         return
     end
     self.controller:toggleReadLater(self.entry, self)
-    self:refreshBottomButtons()
-    UIManager:setDirty(self, function()
-        return "partial", self.movable and self.movable.dimen or self.frame.dimen
-    end)
+end
+
+function methods:showTagsDialog(ges)
+    if not self.controller or not self.entry or not self.controller.showArticleTagsDialog then
+        return
+    end
+    self.controller:showArticleTagsDialog(self.entry, self, ges)
 end
 
 function methods:loadFullText()

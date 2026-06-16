@@ -187,6 +187,7 @@ end
 
 function methods:refreshItems()
     self.items_group:clear()
+    self.item_widgets_by_entry_id = {}
     self:setupItemMetrics()
     local page = self.loaded_pages[self.show_page]
     local item_height = self.item_height
@@ -207,16 +208,17 @@ function methods:refreshItems()
     if self.item_top_spacing > 0 then
         table.insert(self.items_group, VerticalSpan:new{ width = self.item_top_spacing })
     end
-    local is_read_later_stream = self.target and self.target.kind == "readlater"
+    local is_tag_stream = self.controller.isArticleTagTarget
+        and self.controller:isArticleTagTarget(self.target)
     for i = 1, #page.entries do
         local item = page.entries[i]
-        table.insert(self.items_group, item_module.Widget:new{
+        local item_widget = item_module.Widget:new{
             width = self.item_width,
             height = item_height,
             item = item,
             title_font_size = self:getTitleFontSize(),
-            left_action = is_read_later_stream and "read_later" or "read_state",
-            right_action = is_read_later_stream and "tags" or "read_later",
+            left_action = is_tag_stream and "read_later" or "read_state",
+            right_action = is_tag_stream and "tags" or "read_later",
             onToggleReadState = function(entry)
                 self.controller:toggleArticleReadState(entry)
             end,
@@ -230,7 +232,13 @@ function methods:refreshItems()
                 self:prefetchArticleContentsAfterEntry(entry)
                 self.controller:openArticleContent(self.target, entry)
             end,
-        })
+        }
+        table.insert(self.items_group, item_widget)
+        if item.id ~= nil then
+            local entry_id = tostring(item.id)
+            self.item_widgets_by_entry_id[entry_id] = self.item_widgets_by_entry_id[entry_id] or {}
+            table.insert(self.item_widgets_by_entry_id[entry_id], item_widget)
+        end
         if i < #page.entries and self.item_spacing > 0 then
             table.insert(self.items_group, CenterContainer:new{
                 dimen = Geom:new{ w = self.item_width, h = self.item_spacing },
@@ -244,6 +252,38 @@ function methods:refreshItems()
     if self.item_bottom_spacing > 0 then
         table.insert(self.items_group, VerticalSpan:new{ width = self.item_bottom_spacing })
     end
+end
+
+function methods:refreshEntryButtons(entry, options)
+    if self.closing or not entry or entry.id == nil or not self.item_widgets_by_entry_id then
+        return false
+    end
+    local widgets = self.item_widgets_by_entry_id[tostring(entry.id)] or {}
+    local changed = false
+    for i = 1, #widgets do
+        local widget = widgets[i]
+        if widget and widget.refreshActionButtons then
+            changed = widget:refreshActionButtons(options) or changed
+        end
+    end
+    return changed
+end
+
+function methods:refreshVisibleArticleButtons(options)
+    if self.closing or not self.item_widgets_by_entry_id then
+        return false
+    end
+    local changed = false
+    for entry_id in pairs(self.item_widgets_by_entry_id) do
+        local widgets = self.item_widgets_by_entry_id[entry_id]
+        for i = 1, #widgets do
+            local widget = widgets[i]
+            if widget and widget.refreshActionButtons then
+                changed = widget:refreshActionButtons(options) or changed
+            end
+        end
+    end
+    return changed
 end
 
 function methods:refresh()
@@ -710,7 +750,9 @@ function methods:loadNextAdjacentArticle(current_entry, widget)
         end
         if not self:openAdjacentLoadedArticle(current_entry, 1, widget, true) then
             self:refresh()
-            if widget.refreshBottomButtons then
+            if widget.refreshBottomButtonStates then
+                widget:refreshBottomButtonStates()
+            elseif widget.refreshBottomButtons then
                 widget:refreshBottomButtons()
             end
         end
