@@ -111,8 +111,8 @@ end
 function methods:showLoading(text)
     self.state = "loading"
     self:setGroupsPlaceholderState("loading", text)
-    self:showMenu(_("QiReader"), {
-    }, _("Loading"))
+    self:showMenu(_("Subscriptions"), {
+    }, "")
 end
 
 function methods:showError(text, retry_callback)

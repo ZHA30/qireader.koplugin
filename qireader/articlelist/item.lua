@@ -30,10 +30,13 @@ local ARTICLE_ITEM_SUBTITLE_GAP = Size.padding.small
 local ARTICLE_ITEM_ACTION_GAP = Size.span.horizontal_default
 local ARTICLE_ITEM_MIN_CONTENT_WIDTH = 10
 local ARTICLE_BUTTON_MIN_HEIGHT = Screen:scaleBySize(24)
-local ARTICLE_STATUS_MIN_WIDTH = Screen:scaleBySize(20)
+local ARTICLE_STATUS_MIN_WIDTH = Screen:scaleBySize(18)
 local ARTICLE_BUTTON_MAX_FONT_SIZE = 20
 local ARTICLE_BUTTON_MIN_FONT_SIZE = 12
 local ARTICLE_ICON_SIZE = Icons.size.list
+local ARTICLE_STATUS_ICON_SIZE = math.max(1, math.floor(ARTICLE_ICON_SIZE * 0.75))
+local ARTICLE_STATUS_SIDE_PADDING = math.max(0, ARTICLE_ITEM_HORIZONTAL_PADDING - Screen:scaleBySize(6))
+local ARTICLE_STATUS_GAP = math.max(0, ARTICLE_ITEM_ACTION_GAP - Screen:scaleBySize(4))
 
 local function repaintWidget(widget)
     if widget and widget.dimen and widget.dimen.x and widget.dimen.y then
@@ -141,7 +144,7 @@ local ArticleStatusIcon = InputContainer:extend{
 }
 
 function ArticleStatusIcon:init()
-    self.icon = Icons.widget(self.icon_name, { size = ARTICLE_ICON_SIZE })
+    self.icon = Icons.widget(self.icon_name, { size = ARTICLE_STATUS_ICON_SIZE })
     self.icon_container = CenterContainer:new{
         dimen = Geom:new{ w = self.width, h = self.height },
         self.icon,
@@ -179,7 +182,7 @@ function ArticleStatusIcon:setIconName(icon_name, options)
     end
     self.icon_name = icon_name
     local old_icon = self.icon
-    self.icon = Icons.widget(self.icon_name, { size = ARTICLE_ICON_SIZE })
+    self.icon = Icons.widget(self.icon_name, { size = ARTICLE_STATUS_ICON_SIZE })
     if self.icon_container then
         self.icon_container[1] = self.icon
     end
@@ -230,7 +233,7 @@ local function getArticleRowMetrics(row_width, row_height, title_font_size)
     local title_line_height = measureTextBoxLineHeight(title_face, 0.15)
     local subtitle_height = measureTextBoxLineHeight(subtitle_face, 0.1)
     local button_font_size = getButtonFontSizeForHeight(row_height, button_padding_v)
-    local status_width = math.max(ARTICLE_STATUS_MIN_WIDTH, math.floor(row_width * 0.055))
+    local status_width = math.max(ARTICLE_STATUS_MIN_WIDTH, math.floor(row_width * 0.05))
     local action_width = status_width
 
     return {
@@ -244,9 +247,11 @@ local function getArticleRowMetrics(row_width, row_height, title_font_size)
         status_width = status_width,
         action_width = action_width,
         horizontal_padding = ARTICLE_ITEM_HORIZONTAL_PADDING,
+        status_side_padding = ARTICLE_STATUS_SIDE_PADDING,
         vertical_padding = ARTICLE_ITEM_VERTICAL_PADDING,
         subtitle_gap = ARTICLE_ITEM_SUBTITLE_GAP,
         action_gap = ARTICLE_ITEM_ACTION_GAP,
+        status_gap = ARTICLE_STATUS_GAP,
     }
 end
 
@@ -365,7 +370,13 @@ function QiArticleItemWidget:rebuild()
     self.right_button = right_button
     local content_width = math.max(
         ARTICLE_ITEM_MIN_CONTENT_WIDTH,
-        row_width - metrics.horizontal_padding * 2 - left_button_width - right_button_width - metrics.action_gap * 2
+        row_width
+            - metrics.status_side_padding
+            - metrics.horizontal_padding
+            - left_button_width
+            - right_button_width
+            - metrics.status_gap
+            - metrics.action_gap
     )
     local text_block_height = math.max(1, row_height - metrics.vertical_padding * 2)
     local subtitle_area_height = metrics.subtitle_height
@@ -449,9 +460,9 @@ function QiArticleItemWidget:rebuild()
         background = Blitbuffer.COLOR_WHITE,
         HorizontalGroup:new{
             align = "center",
-            HorizontalSpan:new{ width = metrics.horizontal_padding },
+            HorizontalSpan:new{ width = metrics.status_side_padding },
             status_block,
-            HorizontalSpan:new{ width = metrics.action_gap },
+            HorizontalSpan:new{ width = metrics.status_gap },
             text_block,
             HorizontalSpan:new{ width = metrics.action_gap },
             action_block,
