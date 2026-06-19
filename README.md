@@ -22,7 +22,7 @@ Read your QiReader subscriptions from KOReader with synced article lists, articl
 
 ## How to access it
 
-- File browser: `Tools` -> `More tools` -> `QiReader`
+- File browser: `Search` -> `QiReader`
 
 ## Basic usage
 
