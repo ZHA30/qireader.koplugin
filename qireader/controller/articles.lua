@@ -532,6 +532,55 @@ function methods:sendMarkerOutboxRequest(method, entry_ids, job_prefix)
     return true
 end
 
+function methods:sendMarkerUnreadRequest(entry_id)
+    if entry_id == nil then
+        return true
+    end
+    local job = self:createBackgroundRequest({
+        method = "PUT",
+        path = "/markers/unread",
+        body = {
+            entryId = entry_id,
+        },
+    })
+    if not job then
+        self:showTransientMessage(_("Cannot update read state."))
+        return false
+    end
+    local job_key = buildEntryIdsJobKey(MARKER_OUTBOX_UNREAD_JOB_PREFIX, { entry_id })
+    local job_token = self:nextJobToken(job_key)
+    self:registerPendingJob(job_key, job)
+    local function poll()
+        if self.state == "closed"
+            or not self:isJobTokenCurrent(job_key, job_token)
+            or self.pending_jobs[job_key] ~= job then
+            self:cancelPendingJob(job_key, job)
+            return
+        end
+        local done, response, err = job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, poll)
+            return
+        end
+        self:clearPendingJob(job_key, job)
+        if err == "cancelled" then
+            return
+        end
+        if self.state == "closed" or not self:isJobTokenCurrent(job_key, job_token) then
+            return
+        end
+        self:applyResponseSession(response)
+        local response_code = response and response.code or 0
+        if response_code == 401 then
+            self:handleUnauthorized()
+        elseif response_code < 200 or response_code >= 300 then
+            self:showTransientMessage(_("Cannot update read state."))
+        end
+    end
+    poll()
+    return true
+end
+
 function methods:flushMarkerOutbox()
     self.marker_outbox_flush_scheduled = false
     if self.state == "closed" then
@@ -555,8 +604,8 @@ function methods:flushMarkerOutbox()
             addPendingEntryId(self.pending_read_entry_ids, read_ids[i])
         end
     end
-    if not self:sendMarkerOutboxRequest("DELETE", unread_ids, MARKER_OUTBOX_UNREAD_JOB_PREFIX) then
-        for i = 1, #unread_ids do
+    for i = 1, #unread_ids do
+        if not self:sendMarkerUnreadRequest(unread_ids[i]) then
             addPendingEntryId(self.pending_unread_entry_ids, unread_ids[i])
         end
     end
