@@ -29,19 +29,35 @@ local function hasContentPayload(payload)
         and payload.content ~= ""
 end
 
+local function getFormattedContent(payload)
+    if type(payload) ~= "table" then
+        return nil
+    end
+    if type(payload.formatted_content) == "string" and payload.formatted_content ~= "" then
+        return payload.formatted_content
+    end
+    return nil
+end
+
 local function buildArticleContent(entry, payload)
-    local content = payload and payload.content or entry.summary or ""
-    local formatted = ArticleContent.format(entry, content)
+    local formatted = getFormattedContent(payload)
+    if not formatted then
+        local content = payload and payload.content or entry.summary or ""
+        formatted = ArticleContent.format(entry, content)
+    end
     local title = entry.title or (payload and payload.title) or _("Untitled")
     return formatted, title
 end
 
 local function buildFullTextContent(entry, payload)
-    local content = payload and payload.content or nil
-    if type(content) ~= "string" or content == "" then
-        return nil
+    local formatted = getFormattedContent(payload)
+    if not formatted then
+        local content = payload and payload.content or nil
+        if type(content) ~= "string" or content == "" then
+            return nil
+        end
+        formatted = ArticleContent.format(entry, content)
     end
-    local formatted = ArticleContent.format(entry, content)
     local title = entry.title or (payload and payload.title) or _("Untitled")
     return formatted, title
 end
@@ -148,10 +164,12 @@ function methods:cacheArticleContent(target, entry, payload)
     if not hasContentPayload(payload) then
         return
     end
+    local formatted = getFormattedContent(payload) or ArticleContent.format(entry, payload.content)
     self:writeCache(self:getArticleContentCacheKey(target, entry), {
         id = payload.id or entry.id,
         title = payload.title,
         content = payload.content,
+        formatted_content = formatted,
     })
 end
 
@@ -172,7 +190,13 @@ end
 
 function methods:cacheFullText(entry, payload)
     if hasContentPayload(payload) then
-        self:writeCache(self:getFullTextCacheKey(entry), payload)
+        local cached_payload = {
+            id = payload.id or entry.id,
+            title = payload.title,
+            content = payload.content,
+            formatted_content = getFormattedContent(payload) or ArticleContent.format(entry, payload.content),
+        }
+        self:writeCache(self:getFullTextCacheKey(entry), cached_payload)
     end
 end
 
@@ -368,6 +392,7 @@ end
 
 function methods:cancelArticleContentLoads(target)
     self:cancelPendingJob(ARTICLE_CONTENT_JOB_KEY)
+    self:closeActiveDialog()
     if target and target.stream_id then
         self:cancelPendingJob(CONTENT_PREFETCH_JOB_PREFIX .. tostring(target.stream_id))
         self:clearQueuedArticleContentPrefetch(target)
@@ -453,6 +478,7 @@ function methods:onArticleDetailClosed(widget)
     end
     self:cancelPendingJob(ARTICLE_CONTENT_JOB_KEY)
     self:cancelArticleFullText(widget and widget.entry or nil)
+    self:closeActiveDialog()
     UIManager:close(widget)
 end
 
@@ -744,6 +770,7 @@ function methods:cancelArticleFullText(entry)
     if entry and entry.id then
         self:cancelPendingJob(FULL_TEXT_JOB_PREFIX .. tostring(entry.id))
     end
+    self:closeActiveDialog()
 end
 
 function methods:loadArticleFullText(entry, detail_widget)
@@ -777,6 +804,7 @@ function methods:loadArticleFullText(entry, detail_widget)
     local job_key = FULL_TEXT_JOB_PREFIX .. tostring(entry.id)
     local job_token = self:nextJobToken(job_key)
     setFullTextState(detail_widget, "loading", entry.id)
+    self:showActiveLoading(_("Loading"))
 
     local job = self:createBackgroundRequest({
         method = "GET",
@@ -791,6 +819,7 @@ function methods:loadArticleFullText(entry, detail_widget)
         use_session = false,
     })
     if not job then
+        self:closeActiveDialog()
         setFullTextState(detail_widget, "error", entry.id)
         self:showTransientMessage(_("Cannot load full article."))
         return
@@ -803,6 +832,7 @@ function methods:loadArticleFullText(entry, detail_widget)
             or self.pending_jobs[job_key] ~= job
             or not isCurrentDetailWidget(self, entry, detail_widget) then
             self:cancelPendingJob(job_key, job)
+            self:closeActiveDialog()
             return
         end
         local done, response, err = job:poll()
@@ -811,6 +841,7 @@ function methods:loadArticleFullText(entry, detail_widget)
             return
         end
         self:clearPendingJob(job_key, job)
+        self:closeActiveDialog()
         if err == "cancelled" then
             return
         end
@@ -865,8 +896,10 @@ function methods:openArticleContent(target, entry, detail_widget, owner_widget)
         end) then
         return
     end
+    self:showActiveLoading(_("Loading"))
     local missing_entries = { entry }
     self:requestArticleContents(target, missing_entries, ARTICLE_CONTENT_JOB_KEY, nil, function(payloads, err)
+        self:closeActiveDialog()
         if err == "cancelled" or err == "unauthorized" then
             return
         end

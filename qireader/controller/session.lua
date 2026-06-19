@@ -113,6 +113,14 @@ function methods:closeActiveDialog()
     end
 end
 
+function methods:showActiveLoading(text)
+    self:closeActiveDialog()
+    self.active_dialog = InfoMessage:new{
+        text = text or _("Loading"),
+    }
+    UIManager:show(self.active_dialog)
+end
+
 function methods:closeLoginDialog()
     if self.login_dialog then
         UIManager:close(self.login_dialog)

@@ -20,6 +20,16 @@ end
 
 local methods = {}
 
+local function buildRenderSignature(html, css, font_size, width, height)
+    return table.concat({
+        tostring(font_size or ""),
+        tostring(width or ""),
+        tostring(height or ""),
+        css or "",
+        html or "",
+    }, "\0")
+end
+
 function methods:ensureFontsLoaded()
     if self._font_list_loaded then
         return
@@ -140,6 +150,16 @@ function methods:createScrollWidget()
     }
 end
 
+function methods:getRenderSignature(html)
+    return buildRenderSignature(
+        html or self.html,
+        self:getEffectiveCss(),
+        Screen:scaleBySize(self.font_size),
+        self.width,
+        self:getContentHeight()
+    )
+end
+
 function methods:getScrollRatio()
     if not self.scroll_widget or not self.scroll_widget.htmlbox_widget then
         return 0
@@ -155,16 +175,30 @@ function methods:rebuildContent()
     if not self.scroll_widget or not self.content_frame then
         return
     end
-    local old_widget = self.scroll_widget
+    local render_signature = self:getRenderSignature()
+    if self._render_signature == render_signature then
+        return
+    end
     local ratio = self:getScrollRatio()
-    self.scroll_widget = self:createScrollWidget()
-    self.content_frame[1] = self.scroll_widget
+    local scroll_widget = self.scroll_widget
+    local htmlbox_widget = scroll_widget.htmlbox_widget
+    if not htmlbox_widget then
+        return
+    end
+    htmlbox_widget:freeBb()
+    htmlbox_widget:setContent(
+        self.html,
+        self:getEffectiveCss(),
+        Screen:scaleBySize(self.font_size),
+        nil,
+        nil,
+        scroll_widget.html_resource_directory
+    )
+    scroll_widget:resetScroll()
     if ratio > 0 then
-        self.scroll_widget:scrollToRatio(ratio)
+        scroll_widget:scrollToRatio(ratio)
     end
-    if old_widget.free then
-        old_widget:free()
-    end
+    self._render_signature = render_signature
     if self.movable and self.movable.alpha then
         self.movable.alpha = nil
     end
