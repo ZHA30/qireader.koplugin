@@ -1,3 +1,5 @@
+local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../i18n/po.lua")
+
 local JSON = require("json")
 local https = require("ssl.https")
 local ltn12 = require("ltn12")
@@ -132,7 +134,7 @@ function Client:request(method, path, options)
     end
     code, response_headers, status = socket.skip(1, request_result, code, response_headers, status)
     if request_result == nil and status == nil then
-        status = tostring(code or "Network request failed")
+        status = tostring(code or _("Network request failed"))
         response_headers = nil
     end
 

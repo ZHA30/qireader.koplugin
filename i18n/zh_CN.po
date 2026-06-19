@@ -28,9 +28,6 @@ msgstr "邮箱和密码为必填项。"
 msgid "Login failed: "
 msgstr "登录失败："
 
-msgid "Loading subscriptions..."
-msgstr "正在加载订阅..."
-
 msgid "Session expired. Please log in again from Account."
 msgstr "会话已过期，请从“账号”重新登录。"
 
@@ -61,14 +58,8 @@ msgstr "只显示未读：开"
 msgid "Unread only: Off"
 msgstr "只显示未读：关"
 
-msgid "Log out of QiReader?"
-msgstr "要退出 QiReader 登录吗？"
-
 msgid "Log out"
 msgstr "登出"
-
-msgid "Logged out"
-msgstr "已退出登录"
 
 msgid "Subscriptions"
 msgstr "订阅"
@@ -84,12 +75,6 @@ msgstr "标签"
 
 msgid "Untitled"
 msgstr "未命名"
-
-msgid "No unread subscriptions."
-msgstr "没有未读订阅。"
-
-msgid "No subscriptions."
-msgstr "没有订阅。"
 
 msgid "QiReader"
 msgstr "QiReader"
@@ -109,15 +94,6 @@ msgstr "稍后阅读"
 msgid "Fulltext"
 msgstr "全文"
 
-msgid "Previous"
-msgstr "上一个"
-
-msgid "Next"
-msgstr "下一个"
-
-msgid "Close"
-msgstr "关闭"
-
 msgid "Loading..."
 msgstr "加载中..."
 
@@ -126,9 +102,6 @@ msgstr "翻页标记为已读：关"
 
 msgid "Mark on page turn: On"
 msgstr "翻页标记为已读：开"
-
-msgid "No articles."
-msgstr "没有文章。"
 
 msgid "Oldest first: Off"
 msgstr "从旧到新排序：关"
@@ -184,6 +157,9 @@ msgstr "无法打开文章列表。"
 msgid "Cannot resolve read-later tag."
 msgstr "无法解析稍后阅读标签。"
 
+msgid "Cannot update read state."
+msgstr "无法更新已读状态。"
+
 msgid "Cannot update read-later state."
 msgstr "无法更新稍后阅读状态。"
 
@@ -196,14 +172,8 @@ msgstr "没有标签。"
 msgid "Cancel"
 msgstr "取消"
 
-msgid "Apply"
-msgstr "应用"
-
 msgid "Cannot load full article."
 msgstr "无法加载网页全文。"
-
-msgid "Monospace font"
-msgstr "等宽字体"
 
 msgid "Font"
 msgstr "字体"
@@ -220,11 +190,26 @@ msgstr "字号"
 msgid "Selection copied to clipboard."
 msgstr "所选文本已复制到剪贴板。"
 
-msgid "Invalid number."
-msgstr "数字无效。"
-
 msgid "Loading"
 msgstr "加载中"
 
 msgid "Empty"
 msgstr "空"
+
+msgid "Back"
+msgstr "返回"
+
+msgid "Email"
+msgstr "邮箱"
+
+msgid "Password"
+msgstr "密码"
+
+msgid "Request timeout"
+msgstr "请求超时"
+
+msgid "Decode failed"
+msgstr "解析失败"
+
+msgid "Failed creating result directory"
+msgstr "创建结果目录失败"

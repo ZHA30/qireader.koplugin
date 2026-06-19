@@ -1,3 +1,5 @@
+local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../i18n/po.lua")
+
 local buffer = require("string.buffer")
 local DataStorage = require("datastorage")
 local ffiutil = require("ffi/util")
@@ -15,7 +17,7 @@ local result_dir_cleaned = false
 local function timeoutResponse()
     return {
         code = 0,
-        status = "request timeout",
+        status = _("Request timeout"),
         body = "",
         json = nil,
         cookie = nil,
@@ -25,7 +27,7 @@ end
 local function errorResponse(status)
     return {
         code = 0,
-        status = status or "decode failed",
+        status = status or _("Decode failed"),
         body = "",
         json = nil,
         cookie = nil,
@@ -68,7 +70,7 @@ end
 local function newJob(client_settings, request_spec)
     local result_path, result_path_error = newResultPath()
     if not result_path then
-        return nil, result_path_error
+        return nil, result_path_error or _("Failed creating result directory")
     end
 
     local pid, err = ffiutil.runInSubProcess(function()
@@ -194,10 +196,10 @@ function Background:poll()
         if ok and decoded and decoded[1] then
             response = decoded[1]
         else
-            response = errorResponse(payload and "decode failed" or "no response")
+            response = errorResponse(payload and _("Decode failed") or _("No response"))
         end
     else
-        response = errorResponse("no response")
+        response = errorResponse(_("No response"))
     end
     self.pid = nil
 
