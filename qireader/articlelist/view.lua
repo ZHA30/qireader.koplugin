@@ -102,7 +102,12 @@ function methods:init()
     }
     self.layout = {
         { self.title_bar.left_button, self.title_bar.right_button },
-        { self.footer_first_button, self.footer_prev_button, self.footer_next_button },
+        {
+            self.footer_back_button,
+            self.footer_first_button,
+            self.footer_prev_button,
+            self.footer_next_button,
+        },
     }
 
     self:loadPage(1)
@@ -123,7 +128,19 @@ end
 function methods:refreshFooter()
     self.footer_group:clear()
     local button_width = math.floor(self.dimen.w * 0.12)
-    local center_width = math.floor(self.dimen.w * 0.32)
+    local center_width = self.dimen.w - button_width * 4
+    if center_width < math.floor(self.dimen.w * 0.24) then
+        button_width = math.floor(self.dimen.w * 0.11)
+        center_width = self.dimen.w - button_width * 4
+    end
+    self.footer_back_button = Button:new{
+        icon = "back.top",
+        width = button_width,
+        bordersize = 0,
+        radius = 0,
+        callback = function() self:onClose() end,
+        show_parent = self,
+    }
     self.footer_first_button = Button:new{
         icon = "chevron.first",
         width = button_width,
@@ -160,6 +177,7 @@ function methods:refreshFooter()
     }
     self.footer_page_button:disableWithoutDimming()
 
+    table.insert(self.footer_group, self.footer_back_button)
     table.insert(self.footer_group, self.footer_first_button)
     table.insert(self.footer_group, self.footer_prev_button)
     table.insert(self.footer_group, self.footer_page_button)
@@ -181,7 +199,12 @@ function methods:refreshFooter()
     self.footer_container[1] = footer
     self.layout = {
         { self.title_bar.left_button, self.title_bar.right_button },
-        { self.footer_first_button, self.footer_prev_button, self.footer_next_button },
+        {
+            self.footer_back_button,
+            self.footer_first_button,
+            self.footer_prev_button,
+            self.footer_next_button,
+        },
     }
 end
 
