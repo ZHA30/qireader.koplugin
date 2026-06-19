@@ -8,7 +8,6 @@ local Notification = require("ui/widget/notification")
 local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
 local T = require("ffi/util").template
-local Device = require("device")
 
 local methods = {}
 
@@ -31,6 +30,13 @@ local function isTapInsideTitleBarButtonArea(titlebar, ges_ev)
     local button_zone = math.min(titlebar.dimen.w / 3, titlebar.dimen.h * 3)
     local relative_x = ges_ev.pos.x - titlebar.dimen.x
     return relative_x <= button_zone or relative_x >= titlebar.dimen.w - button_zone
+end
+
+local function trimText(text)
+    if type(text) ~= "string" then
+        return ""
+    end
+    return (text:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
 function methods:getFullTextButtonText()
@@ -407,16 +413,41 @@ function methods:onForwardingPanRelease(arg, ges)
     return self.movable:onMovablePanRelease(arg, ges)
 end
 
-function methods:handleTextSelection(text)
-    if Device:hasClipboard() then
-        Device.input.setClipboardText(text)
-        UIManager:show(Notification:new{
-            text = _("Selection copied to clipboard."),
-        })
+function methods:getDictionary()
+    local ui = self.controller
+        and self.controller.plugin
+        and self.controller.plugin.ui
+    return ui and ui.dictionary or nil
+end
+
+function methods:clearTextSelection()
+    if self.closing then
+        return
     end
     if self.scroll_widget and self.scroll_widget.htmlbox_widget then
         self.scroll_widget.htmlbox_widget:scheduleClearHighlightAndRedraw()
     end
+end
+
+function methods:handleTextSelection(text)
+    text = trimText(text)
+    if text == "" then
+        self:clearTextSelection()
+        return
+    end
+
+    local dictionary = self:getDictionary()
+    if not dictionary or not dictionary.onLookupWord then
+        UIManager:show(Notification:new{
+            text = _("Dictionary lookup is not available."),
+        })
+        self:clearTextSelection()
+        return
+    end
+
+    dictionary:onLookupWord(text, nil, nil, nil, nil, function()
+        self:clearTextSelection()
+    end)
 end
 
 function methods:onCloseWidget()
