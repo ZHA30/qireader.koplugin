@@ -252,7 +252,6 @@ function methods:refreshItems()
                 self.controller:showArticleTagsDialog(entry, self, ges)
             end,
             onOpenArticle = function(entry)
-                self:prefetchArticleContentsAfterEntry(entry)
                 self.controller:openArticleContent(self.target, entry)
             end,
         }
@@ -616,66 +615,6 @@ function methods:getLoadedPageForEntryIndex(entry_index)
     return nil
 end
 
-function methods:getContentPrefetchLimit()
-    local cache_settings = self.controller and self.controller.settings and self.controller.settings.cache or {}
-    return math.max(1, tonumber(cache_settings.content_prefetch_count) or 3)
-end
-
-function methods:getContentPrefetchEntriesFromIndex(start_index, max_entries)
-    local entries = self:getLoadedEntries()
-    local prefetch_entries = {}
-    start_index = math.max(1, tonumber(start_index) or 1)
-    max_entries = math.max(1, tonumber(max_entries) or self:getContentPrefetchLimit())
-    for i = start_index, #entries do
-        prefetch_entries[#prefetch_entries + 1] = entries[i]
-        if #prefetch_entries >= max_entries then
-            return prefetch_entries
-        end
-    end
-    return prefetch_entries
-end
-
-function methods:getContentPrefetchEntries()
-    local entries = {}
-    local cache_settings = self.controller and self.controller.settings and self.controller.settings.cache or {}
-    local page_count = math.max(1, tonumber(cache_settings.content_prefetch_pages) or 1)
-    local max_entries = self:getContentPrefetchLimit()
-    local last_page = math.min(self.pages or self.show_page, self.show_page + page_count - 1)
-    for page_number = self.show_page, last_page do
-        local page = self.loaded_pages[page_number]
-        local page_entries = page and page.entries or {}
-        for i = 1, #page_entries do
-            entries[#entries + 1] = page_entries[i]
-            if #entries >= max_entries then
-                return entries
-            end
-        end
-    end
-    return entries
-end
-
-function methods:prefetchVisibleArticleContents()
-    if self.closing or not self.controller or not self.controller.prefetchArticleContents then
-        return
-    end
-    self.controller:prefetchArticleContents(self.target, self:getContentPrefetchEntries(), self)
-end
-
-function methods:prefetchArticleContentsAfterEntry(entry)
-    if self.closing or not self.controller or not self.controller.prefetchArticleContents then
-        return
-    end
-    local entry_index = self:getLoadedEntryIndex(entry)
-    if not entry_index then
-        return
-    end
-    self.controller:prefetchArticleContents(
-        self.target,
-        self:getContentPrefetchEntriesFromIndex(entry_index + 1),
-        self
-    )
-end
-
 function methods:syncArticleListPageToEntryIndex(entry_index, force_refresh)
     local page_number = self:getLoadedPageForEntryIndex(entry_index)
     if not page_number then
@@ -692,7 +631,6 @@ function methods:syncArticleListPageToEntryIndex(entry_index, force_refresh)
     if page_changed or force_refresh then
         self:refresh()
         self:maybePreloadNextChunk()
-        self:prefetchVisibleArticleContents()
     end
 end
 
@@ -727,7 +665,6 @@ function methods:openAdjacentLoadedArticle(current_entry, offset, widget, force_
         return false
     end
     self:syncArticleListPageToEntryIndex(next_index, force_refresh)
-    self:prefetchArticleContentsAfterEntry(next_entry)
     self.controller:openArticleContent(self.target, next_entry, widget)
     return true
 end

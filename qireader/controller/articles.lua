@@ -7,21 +7,12 @@ local UIManager = require("ui/uimanager")
 
 local methods = {}
 local ARTICLE_CONTENT_JOB_KEY = "article_content"
-local CONTENT_PREFETCH_JOB_PREFIX = "article_content_prefetch:"
 local PAGE_READ_MARK_JOB_PREFIX = "page_mark_read:"
 local MARKER_OUTBOX_READ_JOB_PREFIX = "marker_outbox_read:"
 local MARKER_OUTBOX_UNREAD_JOB_PREFIX = "marker_outbox_unread:"
 local MARKER_OUTBOX_FLUSH_DELAY = 2
 local FULL_TEXT_API_URL = "https://nettools3.oxyry.com/text"
 local FULL_TEXT_JOB_PREFIX = "article_full_text:"
-
-local function copyEntries(entries)
-    local copied = {}
-    for i = 1, #(entries or {}) do
-        copied[i] = entries[i]
-    end
-    return copied
-end
 
 local function hasContentPayload(payload)
     return type(payload) == "table"
@@ -289,96 +280,6 @@ function methods:requestArticleContents(target, entries, job_key, options, callb
     poll()
 end
 
-local function isContentPrefetchOwnerCurrent(controller, target, owner_widget)
-    if controller.state == "closed" then
-        return false
-    end
-    if owner_widget then
-        return not owner_widget.closing
-            and owner_widget.target == target
-            and controller.article_widget == owner_widget
-    end
-    return true
-end
-
-function methods:queueArticleContentPrefetch(job_key, target, entries, owner_widget)
-    self.content_prefetch_queue = self.content_prefetch_queue or {}
-    self.content_prefetch_queue[job_key] = {
-        target = target,
-        entries = copyEntries(entries),
-        owner_widget = owner_widget,
-    }
-end
-
-function methods:clearQueuedArticleContentPrefetch(target)
-    if not self.content_prefetch_queue or not target or not target.stream_id then
-        return
-    end
-    self.content_prefetch_queue[CONTENT_PREFETCH_JOB_PREFIX .. tostring(target.stream_id)] = nil
-end
-
-function methods:runQueuedArticleContentPrefetch(job_key)
-    local queue = self.content_prefetch_queue
-    local queued = queue and queue[job_key] or nil
-    if not queued then
-        return
-    end
-    queue[job_key] = nil
-    if not isContentPrefetchOwnerCurrent(self, queued.target, queued.owner_widget) then
-        return
-    end
-    self:prefetchArticleContents(queued.target, queued.entries, queued.owner_widget)
-end
-
-function methods:prefetchArticleContents(target, entries, owner_widget)
-    if not target or not target.stream_id or not entries then
-        return
-    end
-    if not NetworkMgr:isOnline() then
-        return
-    end
-    if not self.cache or not self.cache:isEnabled() then
-        return
-    end
-    if not isContentPrefetchOwnerCurrent(self, target, owner_widget) then
-        return
-    end
-    local missing_entries = {}
-    for i = 1, #entries do
-        local entry = entries[i]
-        if entry and entry.id and not self:getCachedArticleContent(target, entry) then
-            missing_entries[#missing_entries + 1] = entry
-        end
-    end
-    if #missing_entries == 0 then
-        return
-    end
-    local job_key = CONTENT_PREFETCH_JOB_PREFIX .. tostring(target.stream_id)
-    if self.pending_jobs[job_key] then
-        self:queueArticleContentPrefetch(job_key, target, missing_entries, owner_widget)
-        return
-    end
-    self:requestArticleContents(target, missing_entries, job_key, { background = true }, function(payloads, err)
-        if err or not payloads then
-            if self.content_prefetch_queue then
-                self.content_prefetch_queue[job_key] = nil
-            end
-            return
-        end
-        if not isContentPrefetchOwnerCurrent(self, target, owner_widget) then
-            if self.content_prefetch_queue then
-                self.content_prefetch_queue[job_key] = nil
-            end
-            return
-        end
-        for i = 1, #missing_entries do
-            local entry = missing_entries[i]
-            self:cacheArticleContent(target, entry, payloads[tostring(entry.id)])
-        end
-        self:runQueuedArticleContentPrefetch(job_key)
-    end)
-end
-
 function methods:showArticleContent(_target, entry, payload, detail_widget)
     self:markArticleRead(entry)
     local formatted, title = buildArticleContent(entry, payload)
@@ -406,13 +307,9 @@ function methods:showArticleContent(_target, entry, payload, detail_widget)
     UIManager:show(content_widget)
 end
 
-function methods:cancelArticleContentLoads(target)
+function methods:cancelArticleContentLoads(_target)
     self:cancelPendingJob(ARTICLE_CONTENT_JOB_KEY)
     self:closeActiveDialog()
-    if target and target.stream_id then
-        self:cancelPendingJob(CONTENT_PREFETCH_JOB_PREFIX .. tostring(target.stream_id))
-        self:clearQueuedArticleContentPrefetch(target)
-    end
 end
 
 function methods:isArticleContentOwnerCurrent(target, detail_widget, owner_widget, entry)

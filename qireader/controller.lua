@@ -53,7 +53,6 @@ function Controller.new(args)
         pending_read_entry_ids = {},
         pending_unread_entry_ids = {},
         marker_outbox_flush_scheduled = false,
-        content_prefetch_queue = {},
         stream_cache_generation = tonumber(args.settings.stream_cache_generation) or 0,
         stream_cache_generation_dirty = false,
         stream_cache_generation_save_scheduled = false,
@@ -124,7 +123,6 @@ function Controller:cancelAllPendingJobs()
         end
         self.pending_jobs[key] = nil
     end
-    self.content_prefetch_queue = {}
     self.pending_read_entry_ids = {}
     self.pending_unread_entry_ids = {}
     self.marker_outbox_flush_scheduled = false

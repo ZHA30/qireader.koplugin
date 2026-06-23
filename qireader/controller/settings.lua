@@ -197,7 +197,6 @@ function methods:clearCachedData()
     if self.article_detail_widget and self.cancelArticleFullText then
         self:cancelArticleFullText(self.article_detail_widget.entry)
     end
-    self.content_prefetch_queue = {}
     if self.resetCacheStorage then
         self:resetCacheStorage()
     else

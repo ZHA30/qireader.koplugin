@@ -402,7 +402,6 @@ function methods:refreshChunkFromRemote(chunk_index, query, cache_key)
         self.loaded_chunks[chunk_index] = self.controller:normalizeArticlePage(self.target, response.json.result)
         self:rebuildLoadedPages()
         self:refresh()
-        self:prefetchVisibleArticleContents()
     end
 
     poll()
@@ -449,7 +448,6 @@ function methods:maybePreloadNextChunk()
         end
         self:refresh()
         self:maybePreloadNextChunk()
-        self:prefetchVisibleArticleContents()
     end))
     return err == nil
 end
@@ -469,7 +467,6 @@ function methods:loadPage(page, options)
         end
         self:refresh()
         self:maybePreloadNextChunk()
-        self:prefetchVisibleArticleContents()
         return
     end
     if self.loading then
@@ -512,7 +509,6 @@ function methods:loadPage(page, options)
         end
         self:refresh()
         self:maybePreloadNextChunk()
-        self:prefetchVisibleArticleContents()
     end))
     if err == "blocked" or err == "busy" then
         self.show_page = previous_page_number
@@ -535,7 +531,6 @@ end
 function methods:reloadLayoutOnly()
     self:rebuildLoadedPages()
     self:refresh()
-    self:prefetchVisibleArticleContents()
 end
 
 function methods:reloadFromRemote()
