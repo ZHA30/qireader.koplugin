@@ -29,6 +29,10 @@ local function hasContentPayload(payload)
         and payload.content ~= ""
 end
 
+local function sameEntryId(left, right)
+    return left ~= nil and right ~= nil and tostring(left) == tostring(right)
+end
+
 local function getFormattedContent(payload)
     if type(payload) ~= "table" then
         return nil
@@ -97,9 +101,15 @@ local function mapArticleContentPayloads(entries, response)
     end
     for i = 1, #entries do
         local entry = entries[i]
-        local payload = by_id[tostring(entry.id)] or result[i]
+        local payload = by_id[tostring(entry.id)]
         if hasContentPayload(payload) then
             mapped[tostring(entry.id)] = payload
+        elseif #entries == 1 and #result == 1 then
+            local single_payload = result[1]
+            if hasContentPayload(single_payload)
+                and (single_payload.id == nil or sameEntryId(single_payload.id, entry.id)) then
+                mapped[tostring(entry.id)] = single_payload
+            end
         end
     end
     return mapped
@@ -153,11 +163,17 @@ function methods:getArticleContentCacheKey(target, entry)
 end
 
 function methods:getCachedArticleContent(target, entry)
-    return self:readCache(
-        self:getArticleContentCacheKey(target, entry),
+    local cache_key = self:getArticleContentCacheKey(target, entry)
+    local payload, fresh = self:readCache(
+        cache_key,
         self:getCacheTtl("content"),
         not NetworkMgr:isOnline()
     )
+    if payload and payload.id ~= nil and not sameEntryId(payload.id, entry.id) then
+        self:removeCache(cache_key)
+        return nil
+    end
+    return payload, fresh
 end
 
 function methods:cacheArticleContent(target, entry, payload)
@@ -399,15 +415,23 @@ function methods:cancelArticleContentLoads(target)
     end
 end
 
-function methods:isArticleContentOwnerCurrent(target, detail_widget, owner_widget)
+function methods:isArticleContentOwnerCurrent(target, detail_widget, owner_widget, entry)
     if self.state == "closed" then
         return false
     end
     if detail_widget then
-        return detail_widget.entry
-            and not detail_widget.closing
-            and detail_widget.updateArticleDetail
-            and self.article_detail_widget == detail_widget
+        if not detail_widget.entry
+            or detail_widget.closing
+            or not detail_widget.updateArticleDetail
+            or self.article_detail_widget ~= detail_widget then
+            return false
+        end
+        if entry and entry.id then
+            local expected_entry_id = detail_widget.pending_content_entry_id
+                or (detail_widget.entry and detail_widget.entry.id)
+            return sameEntryId(expected_entry_id, entry.id)
+        end
+        return true
     end
     if owner_widget then
         return not owner_widget.closing
@@ -928,7 +952,10 @@ function methods:openArticleContent(target, entry, detail_widget, owner_widget)
         end
     end
     owner_widget = owner_widget or (detail_widget and detail_widget.owner_widget) or self.article_widget
-    if not self:isArticleContentOwnerCurrent(target, detail_widget, owner_widget) then
+    if detail_widget then
+        detail_widget.pending_content_entry_id = entry and entry.id or nil
+    end
+    if not self:isArticleContentOwnerCurrent(target, detail_widget, owner_widget, entry) then
         return
     end
     if not entry or not entry.id then
@@ -952,7 +979,7 @@ function methods:openArticleContent(target, entry, detail_widget, owner_widget)
         if err == "cancelled" or err == "unauthorized" then
             return
         end
-        if not self:isArticleContentOwnerCurrent(target, detail_widget, owner_widget) then
+        if not self:isArticleContentOwnerCurrent(target, detail_widget, owner_widget, entry) then
             return
         end
         if err or not payloads then

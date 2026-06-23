@@ -109,6 +109,24 @@ local function escapeHtml(text)
     return util.htmlEscape(text or "")
 end
 
+local SOFT_BREAK_ENTITY = "&#8203;"
+local SOFT_BREAK_INTERVAL = 24
+
+local function addSoftBreaks(text)
+    text = text or ""
+    text = text:gsub("([/%._%-%?:=#])", "%1" .. SOFT_BREAK_ENTITY)
+    return (text:gsub("%w+", function(word)
+        if #word <= SOFT_BREAK_INTERVAL then
+            return word
+        end
+        local chunks = {}
+        for i = 1, #word, SOFT_BREAK_INTERVAL do
+            chunks[#chunks + 1] = word:sub(i, i + SOFT_BREAK_INTERVAL - 1)
+        end
+        return table.concat(chunks, SOFT_BREAK_ENTITY)
+    end))
+end
+
 local function escapePattern(text)
     return (text:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1"))
 end
@@ -262,7 +280,7 @@ local function buildMediaPlaceholder(label_id, attrs, body)
     end
     local placeholder_text
     if text and text ~= "" then
-        placeholder_text = string.format(_("[%s: %s]"), kind, escapeHtml(text))
+        placeholder_text = string.format(_("[%s: %s]"), kind, addSoftBreaks(escapeHtml(text)))
     else
         placeholder_text = string.format("[%s]", kind)
     end
@@ -504,6 +522,10 @@ a {
     padding: 0.25em 0.35em;
     font-size: 0.88em;
     font-style: italic;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
     text-align: center;
     color: #555;
     border: 0.05em solid #aaa;

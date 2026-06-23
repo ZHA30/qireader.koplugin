@@ -250,6 +250,17 @@ function methods:showSettingsDialog()
                 end,
                 align = "left",
             }},
+            {{
+                text = _("Clear cache"),
+                callback = function()
+                    UIManager:close(dialog)
+                    if self.active_dialog == dialog then
+                        self.active_dialog = nil
+                    end
+                    self:clearCachedData()
+                end,
+                align = "left",
+            }},
         },
         shrink_unneeded_width = true,
         anchor = function()

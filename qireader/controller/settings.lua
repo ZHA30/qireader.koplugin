@@ -187,6 +187,35 @@ function methods:refreshArticleWidgetLayout(widget)
     end
 end
 
+function methods:clearCachedData()
+    if self.article_widget and self.article_widget.clearPendingFetch then
+        self.article_widget:clearPendingFetch()
+    end
+    if self.cancelArticleContentLoads then
+        self:cancelArticleContentLoads(self.article_widget and self.article_widget.target or nil)
+    end
+    if self.article_detail_widget and self.cancelArticleFullText then
+        self:cancelArticleFullText(self.article_detail_widget.entry)
+    end
+    self.content_prefetch_queue = {}
+    if self.resetCacheStorage then
+        self:resetCacheStorage()
+    else
+        self:clearCache()
+    end
+    if self.resetStreamCacheGeneration then
+        self:resetStreamCacheGeneration(0)
+    else
+        self.settings.stream_cache_generation = 0
+    end
+    if self.save_settings then
+        self.save_settings()
+    end
+    if self.showTransientMessage then
+        self:showTransientMessage(_("Cache cleared."))
+    end
+end
+
 function methods:toggleArticleUnreadOnly(target, widget)
     if self:isArticleTagTarget(target) then
         return

@@ -58,6 +58,12 @@ msgstr "只显示未读：开"
 msgid "Unread only: Off"
 msgstr "只显示未读：关"
 
+msgid "Clear cache"
+msgstr "清理缓存"
+
+msgid "Cache cleared."
+msgstr "缓存已清理。"
+
 msgid "Log out"
 msgstr "登出"
 

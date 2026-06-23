@@ -181,6 +181,15 @@ function Controller:clearCache()
     end
 end
 
+function Controller:resetCacheStorage()
+    if self.cache and self.cache.resetStorage then
+        self.cache:resetStorage()
+        return
+    end
+    Cache.deleteStorage()
+    self.cache = Cache.new(self.settings.cache)
+end
+
 function Controller:getCacheTtl(name)
     local cache_settings = self.settings.cache or {}
     return cache_settings[name .. "_ttl"]

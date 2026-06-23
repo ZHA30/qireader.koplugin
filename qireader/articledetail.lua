@@ -395,6 +395,7 @@ local QiArticleDetailWidget = InputContainer:extend{
     full_text_state = "idle",
     full_text_entry_id = nil,
     full_text_original = nil,
+    pending_content_entry_id = nil,
     on_prev_article = nil,
     on_next_article = nil,
     on_close_article = nil,
@@ -581,6 +582,7 @@ function QiArticleDetailWidget:updateArticleDetail(entry, html, title)
     self.entry = entry or self.entry
     self.html = html or self.html
     self.title = title or (entry and entry.title) or self.title
+    self.pending_content_entry_id = nil
     if self.titlebar then
         self.titlebar:setTitle(self.title)
     end

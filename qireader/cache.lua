@@ -10,6 +10,19 @@ local CACHE_DIR = DataStorage:getDataDir() .. "/cache"
 local CACHE_PATH = CACHE_DIR .. "/qireader.sqlite"
 local BACKGROUND_RESULT_DIR = CACHE_DIR .. "/qireader-background"
 
+local function purgeBackgroundResults()
+    pcall(function()
+        ffiutil.purgeDir(BACKGROUND_RESULT_DIR)
+    end)
+end
+
+local function removeStorageFiles()
+    os.remove(CACHE_PATH)
+    os.remove(CACHE_PATH .. "-wal")
+    os.remove(CACHE_PATH .. "-shm")
+    purgeBackgroundResults()
+end
+
 local function escapeComponent(value)
     return tostring(value or "")
         :gsub("%%", "%%25")
@@ -118,19 +131,29 @@ function Cache:remove(key)
 end
 
 function Cache:clear()
-    if not self:isEnabled() then
-        return
+    if self:isEnabled() then
+        pcall(function()
+            self.store:clear()
+        end)
     end
+    purgeBackgroundResults()
+end
+
+function Cache:resetStorage()
     pcall(function()
-        self.store:clear()
+        if self.store and self.store.closeDB then
+            self.store:closeDB(true)
+        end
     end)
+    self.store = nil
+    removeStorageFiles()
+    if self.enabled then
+        self:init()
+    end
 end
 
 function Cache.deleteStorage()
-    os.remove(CACHE_PATH)
-    os.remove(CACHE_PATH .. "-wal")
-    os.remove(CACHE_PATH .. "-shm")
-    ffiutil.purgeDir(BACKGROUND_RESULT_DIR)
+    removeStorageFiles()
 end
 
 return Cache
