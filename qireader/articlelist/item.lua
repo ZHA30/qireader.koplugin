@@ -34,6 +34,7 @@ local ARTICLE_STATUS_MIN_WIDTH = Screen:scaleBySize(18)
 local ARTICLE_BUTTON_MAX_FONT_SIZE = 20
 local ARTICLE_BUTTON_MIN_FONT_SIZE = 12
 local ARTICLE_ICON_SIZE = Icons.size.list
+local ARTICLE_RIGHT_ACTION_ICON_SIZE = math.max(1, math.floor(ARTICLE_ICON_SIZE * 1.25 + 0.5))
 local ARTICLE_STATUS_ICON_SIZE = math.max(1, math.floor(ARTICLE_ICON_SIZE * 0.75))
 local ARTICLE_STATUS_SIDE_PADDING = math.max(0, ARTICLE_ITEM_HORIZONTAL_PADDING - Screen:scaleBySize(6))
 local ARTICLE_STATUS_GAP = math.max(0, ARTICLE_ITEM_ACTION_GAP - Screen:scaleBySize(4))
@@ -74,13 +75,14 @@ local ArticleActionIconButton = InputContainer:extend{
     callback = nil,
     icon_name = "read-later",
     icon_state = nil,
+    icon_size = ARTICLE_ICON_SIZE,
     background_color = Blitbuffer.COLOR_WHITE,
 }
 
 function ArticleActionIconButton:init()
     self.icon = Icons.widget(self.icon_name, {
         state = self.icon_state,
-        size = ARTICLE_ICON_SIZE,
+        size = self.icon_size,
     })
     self.frame = FrameContainer:new{
         width = self.width,
@@ -122,7 +124,7 @@ function ArticleActionIconButton:setIconState(icon_state, options)
     local old_icon = self.icon
     self.icon = Icons.widget(self.icon_name, {
         state = self.icon_state,
-        size = ARTICLE_ICON_SIZE,
+        size = self.icon_size,
     })
     if self.frame and self.frame[1] then
         self.frame[1][1] = self.icon
@@ -343,6 +345,7 @@ function QiArticleItemWidget:rebuild()
             height = button_height,
             icon_name = "tag",
             icon_state = item.has_tags and "active" or nil,
+            icon_size = ARTICLE_RIGHT_ACTION_ICON_SIZE,
             callback = function(ges)
                 if self.onShowTags then
                     self.onShowTags(item, ges)
@@ -356,6 +359,7 @@ function QiArticleItemWidget:rebuild()
             height = button_height,
             icon_name = "read-later",
             icon_state = item.is_read_later and "active" or nil,
+            icon_size = ARTICLE_RIGHT_ACTION_ICON_SIZE,
             callback = function()
                 if self.onToggleReadLater then
                     self.onToggleReadLater(item)
