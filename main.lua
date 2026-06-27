@@ -1,4 +1,5 @@
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "i18n/po.lua")
+local Dispatcher = require("dispatcher")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 
 local Controller = require("qireader.controller")
@@ -34,7 +35,24 @@ function QiReader:init()
     if not self:isFileManagerContext() then
         return
     end
+    self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
+end
+
+function QiReader:onDispatcherRegisterActions()
+    Dispatcher:registerAction(self.name .. "_open", {
+        category = "none",
+        event = "OpenQiReader",
+        title = _("QiReader"),
+        filemanager = true,
+    })
+end
+
+function QiReader:onOpenQiReader()
+    if not self:isFileManagerContext() then
+        return
+    end
+    self:ensureController():open()
 end
 
 function QiReader:saveSettings()
@@ -51,7 +69,7 @@ function QiReader:addToMainMenu(menu_items)
         text = _("QiReader"),
         sorting_hint = "search",
         callback = function()
-            self:ensureController():open()
+            self:onOpenQiReader()
         end,
     }
 end
