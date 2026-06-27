@@ -3,6 +3,7 @@ local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../
 local buffer = require("string.buffer")
 local DataStorage = require("datastorage")
 local ffiutil = require("ffi/util")
+local logger = require("logger")
 local UIManager = require("ui/uimanager")
 local util = require("util")
 
@@ -74,24 +75,32 @@ local function newJob(client_settings, request_spec)
     end
 
     local pid, err = ffiutil.runInSubProcess(function()
-        local Client = require("qireader.client")
-        local client = Client.new{
-            api_base = client_settings.api_base,
-            cookie = client_settings.cookie,
-        }
-        local results = table.pack(client:request(
-            request_spec.method,
-            request_spec.path,
-            {
-                url = request_spec.url,
-                query = request_spec.query,
-                body = request_spec.body,
-                headers = request_spec.headers,
-                use_session = request_spec.use_session,
+        local ok, results = xpcall(function()
+            local Client = require("qireader.client")
+            local client = Client.new{
+                api_base = client_settings.api_base,
+                cookie = client_settings.cookie,
             }
-        ))
-        local ok, encoded = pcall(buffer.encode, results)
-        if ok then
+            return table.pack(client:request(
+                request_spec.method,
+                request_spec.path,
+                {
+                    url = request_spec.url,
+                    query = request_spec.query,
+                    body = request_spec.body,
+                    headers = request_spec.headers,
+                    use_session = request_spec.use_session,
+                }
+            ))
+        end, debug.traceback)
+        if not ok then
+            results = {
+                n = 1,
+                errorResponse(tostring(results)),
+            }
+        end
+        local encoded_ok, encoded = pcall(buffer.encode, results)
+        if encoded_ok then
             writeResult(result_path, encoded)
         else
             local fallback = buffer.encode({
@@ -110,6 +119,7 @@ local function newJob(client_settings, request_spec)
 
     if not pid then
         os.remove(result_path)
+        logger.warn("QiReader background request failed to start:", err)
         return nil, err
     end
 
@@ -196,9 +206,11 @@ function Background:poll()
         if ok and decoded and decoded[1] then
             response = decoded[1]
         else
+            logger.warn("QiReader background request returned invalid payload:", payload and #payload or "nil")
             response = errorResponse(payload and _("Decode failed") or _("No response"))
         end
     else
+        logger.warn("QiReader background request missing result path")
         response = errorResponse(_("No response"))
     end
     self.pid = nil

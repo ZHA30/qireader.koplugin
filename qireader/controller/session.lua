@@ -1,10 +1,10 @@
 local _ = dofile((debug.getinfo(1, "S").source:match("^@(.*/)") or "./") .. "../../i18n/po.lua")
 
 local InfoMessage = require("ui/widget/infomessage")
+local logger = require("logger")
 local MultiInputDialog = require("ui/widget/multiinputdialog")
 local NetworkMgr = require("ui/network/manager")
 local Settings = require("qireader.settings")
-local Trapper = require("ui/trapper")
 local UIManager = require("ui/uimanager")
 
 local function responseError(response)
@@ -207,31 +207,68 @@ function methods:login(email, password)
     self.state = "loading"
     self:showLoading(_("Logging in..."))
     local request_token = self:nextJobToken("login")
-    Trapper:wrap(function()
-        local completed, response = Trapper:dismissableRunInSubprocess(function()
-            local Client = require("qireader.client")
-            local client = Client.new{
-                api_base = self.settings.api_base,
-                cookie = self.settings.cookie,
-            }
-            return client:login(email, password)
-        end, _("Logging in..."))
+    local login_job = self:createBackgroundRequest({
+        method = "POST",
+        path = "/session",
+        body = {
+            email = email,
+            password = password,
+        },
+    })
+    local function showLoginFailure(response)
+        logger.warn(
+            "QiReader login failed:",
+            response and response.code or "nil",
+            response and response.status or "nil"
+        )
+        self:clearPendingJob("login", login_job)
+        clearSession(self)
+        self:showGroupsPage()
+        UIManager:show(InfoMessage:new{
+            text = _("Login failed: ") .. responseError(response),
+        })
+        self:showAccountDialog()
+    end
+    if not login_job then
+        logger.warn("QiReader login job was not created")
+        showLoginFailure(nil)
+        return
+    end
+    logger.dbg("QiReader login job created")
+    self:registerPendingJob("login", login_job)
+
+    local function pollLogin()
         if self.state == "closed" or not self:isJobTokenCurrent("login", request_token) then
+            self:cancelPendingJob("login", login_job)
             return
         end
-        if not completed then
+        if self.pending_jobs.login ~= login_job then
+            return
+        end
+        local done, response, err = login_job:poll()
+        if not done then
+            UIManager:scheduleIn(0.1, pollLogin)
+            return
+        end
+        logger.dbg(
+            "QiReader login job done:",
+            response and response.code or "nil",
+            response and response.status or "nil",
+            err or ""
+        )
+        self:clearPendingJob("login", login_job)
+        if err == "cancelled" then
             self.state = "closed"
             self:showGroupsPage()
             return
         end
+        if not response then
+            showLoginFailure(nil)
+            return
+        end
         self:applyResponseSession(response)
         if response.code ~= 200 or not response.json or not response.json.result then
-            clearSession(self)
-            self:showGroupsPage()
-            UIManager:show(InfoMessage:new{
-                text = _("Login failed: ") .. responseError(response),
-            })
-            self:showAccountDialog()
+            showLoginFailure(response)
             return
         end
         self.settings.user = response.json.result
@@ -240,7 +277,9 @@ function methods:login(email, password)
         self:closeLoginDialog()
         self:closeActiveDialog()
         self:openHome()
-    end)
+    end
+
+    pollLogin()
 end
 
 function methods:startSubscriptionsLoad(options)
